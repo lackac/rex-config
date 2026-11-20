@@ -1,7 +1,7 @@
 package.path = "./?.lua;./?/init.lua;" .. package.path
 
 local actions, bindings, queued = {}, {}, {}
-local process = { foreground = { name = "zsh", argv0 = "/bin/zsh" } }
+local process
 local moved = nil
 local move_error = nil
 
@@ -31,22 +31,25 @@ rex = {
 }
 
 require("navigation").setup()
-for _, direction in ipairs({ "left", "down", "up", "right" }) do
-  local binding = assert(bindings["ctrl+" .. direction])
-  assert(binding.action == "smart_splits_focus")
-  assert(binding.args.direction == direction)
-  assert(binding.args.key == "ctrl+" .. direction)
-end
-
 local ctx = { block_id = "block:origin" }
-actions.smart_splits_focus(ctx, bindings["ctrl+left"].args)
-assert(moved == "left" and #queued == 0, "ordinary panes must navigate in Rex")
+for direction, letter in pairs({ left = "h", down = "j", up = "k", right = "l" }) do
+  for _, suffix in ipairs({ direction, letter }) do
+    local key = "ctrl+" .. suffix
+    local binding = assert(bindings[key], "missing binding for " .. key)
+    assert(binding.action == "smart_splits_focus")
 
-moved = nil
-process = { foreground = { name = "editor", argv0 = "/nix/store/neovim/bin/nvim" } }
-actions.smart_splits_focus(ctx, bindings["ctrl+right"].args)
-assert(moved == nil, "Neovim must receive navigation before Rex handles it")
-assert(queued[1].action == "pane.send_key" and queued[1].args.key == "ctrl+right")
+    queued, moved = {}, nil
+    process = { foreground = { name = "zsh", argv0 = "/bin/zsh" } }
+    actions[binding.action](ctx, binding.args)
+    assert(moved == direction and #queued == 0, key .. " must navigate in Rex")
+
+    moved = nil
+    process = { foreground = { name = "editor", argv0 = "/nix/store/neovim/bin/nvim" } }
+    actions[binding.action](ctx, binding.args)
+    assert(moved == nil and #queued == 1, key .. " must be handed off to Neovim")
+    assert(queued[1].action == "pane.send_key" and queued[1].args.key == key)
+  end
+end
 
 assert(not pcall(actions.smart_splits_focus, ctx, { direction = "left" }))
 process = nil
@@ -56,7 +59,8 @@ assert(not pcall(actions.smart_splits_focus, {}, { direction = "left", key = "ct
 process = { foreground = { name = "zsh" } }
 move_error = "session unavailable"
 assert(not pcall(actions.smart_splits_focus, ctx, { direction = "left" }))
+queued = {}
 actions.smart_splits_resize(ctx, { direction = "up" })
-assert(queued[2].action == "pane.resize" and queued[2].args.amount == 5)
+assert(queued[1].action == "pane.resize" and queued[1].args.amount == 5)
 
 print("navigation tests passed")

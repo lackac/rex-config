@@ -2,11 +2,11 @@ local M = {}
 
 function M.setup()
   require("vendor.smart-splits-rex").setup({ resize_amount = 5 })
-  for key, direction in pairs({ left = "left", down = "down", up = "up", right = "right" }) do
-    rex.bind("ctrl+" .. key, "smart_splits_focus", {
-      direction = direction,
-      key = "ctrl+" .. key,
-    })
+  for direction, letter in pairs({ left = "h", down = "j", up = "k", right = "l" }) do
+    for _, suffix in ipairs({ direction, letter }) do
+      local key = "ctrl+" .. suffix
+      rex.bind(key, "smart_splits_focus", { direction = direction, key = key })
+    end
   end
 end
 
