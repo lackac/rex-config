@@ -1,13 +1,13 @@
 local common = require("common")
 local M = {}
 
-local function command_split(origin, argv)
+local function command_split(origin, argv, side, ratio)
   return common.call("session.new_split", {
     session_id = origin.session_id,
     anchor_id = origin.block_id,
     direction = "horizontal",
-    side = "before",
-    ratio = 0.62,
+    side = side or "before",
+    ratio = ratio or 0.62,
     focus = true,
     layout = common.layout(origin.cwd, {
       common.tool("zsh"),
@@ -36,15 +36,14 @@ function M.setup()
   })
   rex.action({
     name = "split_man",
-    title = "Read manual…",
+    title = "Read manual beside pane",
     run = function(ctx)
-      local origin = common.origin(ctx)
-      local topic = rex.ui.input({ title = "Manual page", placeholder = "Command name" })
-      if not topic or topic == "" then
-        return
-      end
-      assert(not topic:find("[%c%s]") and topic:sub(1, 1) ~= "-", "Enter a manual page name")
-      return command_split(origin, { "man", topic })
+      return command_split(common.origin(ctx), {
+        common.tool("zsh"),
+        "-f",
+        common.directory .. "/man-picker.zsh",
+        common.tool("fzf"),
+      }, "after", 0.5)
     end,
   })
 
