@@ -56,7 +56,7 @@ function M.setup()
     c = { "client.tab.new" },
     [","] = { "client.tab.rename" },
     ["'"] = { "pane.go_to" },
-    f = { "popup_scratch" },
+    f = { "pane.new_floating" },
     l = { "popup_lazygit" },
     g = { "split_lazygit" },
     v = { "split_editor" },

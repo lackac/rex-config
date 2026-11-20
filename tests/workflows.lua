@@ -76,7 +76,6 @@ equal(#commands, 0)
 for _, name in ipairs({
   "project_open",
   "project_picker",
-  "popup_scratch",
   "popup_lazygit",
   "text_picker",
   "session_close",
