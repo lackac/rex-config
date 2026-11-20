@@ -4,6 +4,7 @@ package.path = "./?.lua;" .. package.path
 
 local actions, calls, commands, queued, json = {}, {}, {}, {}, {}
 local handlers = {}
+local logs, zoxide = {}, nil
 local function equal(actual, expected)
   assert(actual == expected, tostring(actual) .. " ~= " .. tostring(expected))
 end
@@ -29,6 +30,8 @@ rex = {
       stdout = argv[6]:gsub("/alias$", "/project") .. "\n"
     elseif argv[1] == "/tools/python3" then
       stdout = "hello\n"
+    elseif argv[1] == "/tools/zoxide" then
+      return zoxide
     end
     return { ok = true, code = 0, stdout = stdout, stderr = "" }
   end,
@@ -51,7 +54,9 @@ rex = {
       queued[#queued + 1] = { name = name, args = args }
     end,
   },
-  log = function() end,
+  log = function(level, message)
+    logs[#logs + 1] = { level = level, message = message }
+  end,
   sleep = function() end,
   ui = {
     pick = function()
@@ -255,6 +260,102 @@ handlers["session.create"] = function(args)
 end
 projects.open({}, os.getenv("HOME"))
 
+-- The named action lists without a terminal and canonicalizes only on selection.
+local default_pick = rex.ui.pick
+local pick_project = actions.project_picker.run
+sessions[3].label = "renamed project"
+handlers["session.list"] = function()
+  return { sessions = { sessions[3], sessions[1] } }
+end
+zoxide = {
+  ok = true,
+  stdout = "/new//./project/\n"
+    .. "/z/another project\n"
+    .. "/new/alias\n"
+    .. "/a/nix-config\n"
+    .. "/z/another project/\n"
+    .. os.getenv("HOME")
+    .. "\n",
+}
+local function check_picker(opts)
+  equal(#opts.items, 6)
+  equal(opts.items[1].title, "renamed project")
+  equal(opts.items[1].subtitle, "/new/project")
+  equal(opts.items[1].detail, "Session")
+  equal(opts.items[2].title, "renamed")
+  equal(opts.items[2].subtitle, nil)
+  equal(opts.items[3].subtitle, "/z/another project")
+  equal(opts.items[4].subtitle, "/new/alias")
+  equal(opts.items[5].title, "nix-config")
+  equal(opts.items[6].title, "main")
+end
+rex.ui.pick = function(opts)
+  check_picker(opts)
+  return opts.items[1].id
+end
+local commands_before, calls_before = #commands, #calls
+local picker_ctx = { client_id = "client:origin" }
+equal(pick_project(picker_ctx).session_id, "session:created")
+equal(queued[#queued].name, "session.select")
+equal(queued[#queued].args.session_id, "session:created")
+equal(#calls, calls_before + 1)
+equal(calls[#calls].method, "session.list")
+equal(#commands, commands_before + 1)
+equal(table.concat(commands[#commands].argv, " "), "/tools/zoxide query --list")
+equal(commands[#commands].opts.cwd, nil)
+
+rex.ui.pick = function(opts)
+  check_picker(opts)
+  return opts.items[4].id
+end
+local reused = pick_project(picker_ctx)
+equal(reused.session_id, "session:created")
+equal(reused.path, "/new/project")
+equal(queued[#queued].args.session_id, "session:created")
+
+-- Missing or failed zoxide and prompt errors leave sessions usable and do not
+-- create or select anything unless the picker returns a known ID.
+local queued_after, logged = #queued, #logs
+zoxide = nil
+rex.ui.pick = function(opts)
+  equal(#opts.items, 2)
+  equal(opts.items[1].title, "renamed project")
+  return nil, "cancelled"
+end
+equal(pick_project({}), nil)
+equal(#logs, logged)
+zoxide = { ok = false, stdout = "/ignored\n" }
+rex.ui.pick = function(opts)
+  equal(#opts.items, 2)
+  return nil, "failed", "no prompt"
+end
+equal(pick_project({}), nil)
+equal(logs[#logs].level, "warn")
+equal(logs[#logs].message, "Project picker: failed: no prompt")
+rex.ui.pick = function()
+  return "not-an-item"
+end
+fails(function()
+  pick_project({})
+end, "Invalid project selection")
+equal(#queued, queued_after)
+
+local many = {}
+for i = 1, 2000 do
+  many[i] = "/dir-" .. i
+end
+zoxide = { ok = true, stdout = table.concat(many, "\n") }
+rex.ui.pick = function(opts)
+  equal(#opts.items, 2000)
+  equal(opts.items[1].detail, "Session")
+  equal(opts.items[2].detail, "Session")
+  equal(opts.items[3].subtitle, "/dir-1")
+  equal(opts.items[2000].subtitle, "/dir-1998")
+  return nil, "cancelled"
+end
+equal(pick_project({}), nil)
+rex.ui.pick = default_pick
+
 -- Capture precisely the origin window, including floating terminal histories,
 -- with byte offsets when terminal.format returns a multipart result.
 handlers[common.creator .. ".format"] = function(args)
@@ -312,14 +413,13 @@ fails(function()
   text.apply(origin, "tab", "echo\tcompletion")
 end, "control")
 
--- Cancelled text/project pickers apply nothing and never bypass session_close.
+-- A cancelled text picker applies nothing.
 local real_popup = common.popup
 common.popup = function()
   return nil
 end
 local before = #queued
 equal(text.picker(origin, { blocks = { origin.block_id } }), nil)
-equal(projects.picker(origin), nil)
 equal(#queued, before)
 common.popup = real_popup
 

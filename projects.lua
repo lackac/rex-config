@@ -1,6 +1,7 @@
 local common = require("common")
 local M = {}
 local opening = {}
+local picker_limit = 2000
 
 local function state_path()
   return (os.getenv("XDG_STATE_HOME") or assert(os.getenv("HOME")) .. "/.local/state")
@@ -132,101 +133,79 @@ local function display(text)
   return (text:gsub("[%c]", " "))
 end
 
-function M.candidates()
-  local entries, seen = {}, {}
-  local saved = registry()
-  local paths = {}
-  for path, id in pairs(saved) do
-    paths[id] = path
-  end
-  local function add(entry)
-    entries[#entries + 1] = entry
-    entry.key = tostring(#entries)
-  end
-  for _, session in ipairs(common.call("session.list").sessions or {}) do
-    add({
-      source = "sessions",
-      label = session.label,
-      path = paths[session.session_id] or "",
-      session_id = session.session_id,
-    })
-  end
-  local function directory(path, source)
-    local ok, canonical = pcall(common.canonical, path)
-    if ok and not seen[canonical] then
-      seen[canonical] = true
-      add({ source = source, label = M.name(canonical), path = canonical })
+-- Compare only obvious spellings here. Resolving symlinks or ".." can wait
+-- until a directory is selected and opened.
+local function path_key(path)
+  local parts = {}
+  for part in path:gmatch("[^/]+") do
+    if part ~= "." then
+      parts[#parts + 1] = part
     end
   end
-  directory(assert(os.getenv("HOME")), "configs")
-  local home = assert(os.getenv("HOME"))
-  local configs = { "nix-config", "nvf-config", "oc-config", "hs-config", "rex-config" }
-  for _, name in ipairs(configs) do
-    directory(home .. "/Code/lackac/" .. name, "configs")
-  end
-  local zoxide = rex.exec({ common.tool("zoxide"), "query", "--list" })
-  if zoxide and zoxide.ok then
-    for path in zoxide.stdout:gmatch("[^\r\n]+") do
-      directory(path, "zoxide")
-    end
-  end
-  return entries
+  return "/" .. table.concat(parts, "/")
 end
 
-function M.picker(origin)
-  local entries = M.candidates()
-  local result = common.popup(origin, function(file)
-    local rows, sources = {}, { sessions = {}, configs = {}, zoxide = {} }
-    for _, entry in ipairs(entries) do
-      local row = table.concat(
-        { entry.key, entry.source, display(entry.label), display(entry.path) },
-        "\t"
-      ) .. "\n"
-      rows[#rows + 1] = row
-      sources[entry.source][#sources[entry.source] + 1] = row
+local function picker(ctx)
+  local items, targets, live, seen = {}, {}, {}, {}
+  local function add(item, target)
+    item.id = tostring(#items + 1)
+    items[#items + 1] = item
+    targets[item.id] = target
+    return item
+  end
+  for _, session in ipairs(common.call("session.list").sessions or {}) do
+    if #items == picker_limit then
+      break
     end
-    local bindings = {}
-    sources.all = rows
-    for _, pair in ipairs({
-      { "ctrl-a", "all" },
-      { "ctrl-t", "sessions" },
-      { "ctrl-g", "configs" },
-      { "ctrl-d", "zoxide" },
-    }) do
-      local path = file(pair[2], table.concat(sources[pair[2]]))
-      bindings[#bindings + 1] = pair[1]
-        .. ":reload(cat "
-        .. common.quote(path)
-        .. ")+change-prompt("
-        .. pair[2]
-        .. "> )"
+    local id = session.session_id
+    live[id] = add({
+      title = display(session.label or id),
+      icon = "terminal",
+      detail = "Session",
+    }, { session_id = id })
+  end
+  for path, id in pairs(registry()) do
+    if live[id] then
+      live[id].subtitle = display(path)
+      seen[path_key(path)] = true
     end
-    bindings[#bindings + 1] = "ctrl-b:change-nth(2)"
-    bindings[#bindings + 1] = "ctrl-p:change-nth(3)"
-    return common.fzf(file, table.concat(rows), {
-      "--delimiter=\t",
-      "--with-nth=2,3,4",
-      "--nth=2,3",
-      "--prompt=all> ",
-      "--header=ctrl-a all / ctrl-t sessions / ctrl-g configs / ctrl-d zoxide | ctrl-b name / ctrl-p path",
-      "--bind=" .. table.concat(bindings, ","),
-      "--preview=" .. common.command({ common.tool("tree"), "-C", "-L", "2", "--" }) .. " {4}",
-    })
-  end)
-  if not result or result == "" then
+  end
+  local zoxide = #items < picker_limit
+    and rex.exec({ common.tool("zoxide"), "query", "--list" }, { timeout = 3 })
+  if zoxide and zoxide.ok then
+    for path in zoxide.stdout:gmatch("[^\n]+") do
+      if #items == picker_limit then
+        break
+      end
+      if path:sub(1, 1) == "/" and not path:find("[%z\r\t]") then
+        local key = path_key(path)
+        if not seen[key] then
+          seen[key] = true
+          add({ title = display(M.name(key)), subtitle = display(path), icon = "folder" }, {
+            path = path,
+          })
+        end
+      end
+    end
+  end
+
+  local choice, why, detail = rex.ui.pick({
+    title = "Choose project",
+    placeholder = "Filter by name or path",
+    items = items,
+  })
+  if choice == nil then
+    if why and why ~= "cancelled" then
+      rex.log("warn", "Project picker: " .. why .. (detail and ": " .. detail or ""))
+    end
     return
   end
-  local key = result:match("^(%d+)\t")
-  local entry = key and entries[tonumber(key)]
-  assert(entry and entry.key == key, "Invalid project selection")
-  if entry.session_id then
-    common.call("session.attach", { session_id = entry.session_id })
-    rex.client.queue("session.select", { session_id = entry.session_id })
-    return { session_id = entry.session_id }
+  local target = assert(targets[choice], "Invalid project selection")
+  if target.session_id then
+    rex.client.queue("session.select", { session_id = target.session_id })
+    return target
   end
-  local opened, err = rex.invoke("project_open", { path = entry.path })
-  assert(opened, err)
-  return opened
+  return M.open(ctx, target.path)
 end
 
 function M.setup()
@@ -241,9 +220,7 @@ function M.setup()
   rex.action({
     name = "project_picker",
     title = "Choose project…",
-    run = function(ctx)
-      return common.launch("projects", common.origin(ctx))
-    end,
+    run = picker,
   })
 end
 

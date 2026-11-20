@@ -116,27 +116,15 @@ local ok, err = pcall(function()
     assert(opened.session_id == target.session_id, "Existing test project was not reused")
     selected(target)
   end)
-  check("directory picker switches the app", function()
-    reset()
-    local projects = require("projects")
-    local candidates, fzf = projects.candidates, common.fzf
-    projects.candidates = function()
-      return { { key = "1", source = "configs", label = "target", path = base .. "/target" } }
+  check("both project picker keys bind the named action", function()
+    local keymap = assert(rex.json.decode(cli("keymap", "--json")))
+    local found = {}
+    for _, binding in ipairs(keymap.bindings) do
+      if binding.keys[1] == "ctrl+a" and binding.action == "project_picker" then
+        found[binding.keys[2]] = true
+      end
     end
-    common.fzf = function(file, rows, options)
-      options[#options + 1] = "--filter=target"
-      return fzf(file, rows, options)
-    end
-    local picked, pick_err = pcall(projects.picker, {
-      session_id = id,
-      window_id = origin.initial_windows[1].window_id,
-      block_id = block,
-      client_id = client,
-      cwd = base .. "/origin",
-    })
-    projects.candidates, common.fzf = candidates, fzf
-    assert(picked, pick_err)
-    selected(target)
+    assert(found[";"] and found.k, "Missing a project picker binding")
   end)
   check("new project creates two tabs and switches the app", function()
     reset()
@@ -206,9 +194,9 @@ local ok, err = pcall(function()
       selected(target, false)
     end)
   end
-  check("picker is sized by the app, not its worker", function()
+  check("text picker is sized by the app, not its worker", function()
     reset()
-    cli("do", "-s", id, "-b", block, "project_picker")
+    cli("do", "-s", id, "-b", block, "text_picker")
     local popup
     for _ = 1, 100 do
       local window = view(origin).windows[1]
@@ -218,7 +206,7 @@ local ok, err = pcall(function()
       end
       rex.sleep(0.05)
     end
-    assert(popup, "Picker did not start")
+    assert(popup, "Text picker did not start")
     local size
     for _ = 1, 100 do
       size = common.terminal({ session_id = id, block_id = popup }, "size")
@@ -231,7 +219,7 @@ local ok, err = pcall(function()
     cli("send-key", "-s", id, "-b", popup, "ctrl+c")
     assert(
       size.owner == client,
-      "Picker owned by " .. tostring(size.owner) .. " at " .. size.columns .. "x" .. size.rows
+      "Text picker owned by " .. tostring(size.owner) .. " at " .. size.columns .. "x" .. size.rows
     )
   end)
 end)
