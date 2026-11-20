@@ -46,35 +46,12 @@ local ok, err = pcall(function()
       process = common.terminal(origin, "process"),
     }))
   )
-  common.call(
-    "session.focus_window",
-    { session_id = first.session_id, window_id = window.window_id }
-  )
-  local selected = common.popup(origin, function(file)
-    return common.fzf(file, "alpha\nbeta\n", { "--filter=beta" })
-  end)
-  assert(selected == "beta\n", tostring(selected))
-  local after = common.call("session.view", { session_id = first.session_id })
-  assert(after.active_window_id == window.window_id)
-  assert(#after.windows[1].layers == 1, "Completed popup left a floating layer")
-  assert(after.windows[1].focused_block_id == origin.block_id, "Popup did not restore origin focus")
-
-  assert(common.popup(origin, function(file)
-    return common.fzf(file, "alpha\n", { "--filter=no-match" })
-  end) == nil, "Cancelled picker returned output")
-  after = common.call("session.view", { session_id = first.session_id })
-  assert(#after.windows[1].layers == 1, "Cancelled popup left a floating layer")
-
-  local captured = require("text").capture(origin, { origin.block_id })
-  assert(type(captured) == "string")
   local tools = assert(loadfile(os.getenv("HOME") .. "/.local/share/rex/tools.lua"))()
   for name, path in pairs(tools) do
     local file = assert(io.open(path, "r"), "Missing tool: " .. name)
     file:close()
   end
-  print(
-    "Rex runtime: canonical project reuse, renamed sessions, two tabs, popup selection/cancel/focus/cleanup, capture and tools passed"
-  )
+  print("Rex runtime: canonical project reuse, renamed sessions, two tabs, cwd and tools passed")
 end)
 
 for _, id in ipairs(created) do

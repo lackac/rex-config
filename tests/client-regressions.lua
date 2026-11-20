@@ -80,7 +80,6 @@ end
 local ok, err = pcall(function()
   local origin, target = create("origin"), create("target")
   local id = origin.session_id
-  local block = origin.initial_windows[1].block_ids[1]
   local function reset()
     focus(target, 1)
     rex.client.queue("session.select", { session_id = id })
@@ -194,34 +193,6 @@ local ok, err = pcall(function()
       selected(target, false)
     end)
   end
-  check("text picker is sized by the app, not its worker", function()
-    reset()
-    cli("do", "-s", id, "-b", block, "text_picker")
-    local popup
-    for _ = 1, 100 do
-      local window = view(origin).windows[1]
-      if window.layers[2] then
-        popup = window.layers[2].blocks[1].block_id
-        break
-      end
-      rex.sleep(0.05)
-    end
-    assert(popup, "Text picker did not start")
-    local size
-    for _ = 1, 100 do
-      size = common.terminal({ session_id = id, block_id = popup }, "size")
-      if size.owner == client then
-        break
-      end
-      rex.sleep(0.05)
-    end
-    -- Cancel before asserting so a failure cannot leave an interactive popup.
-    cli("send-key", "-s", id, "-b", popup, "ctrl+c")
-    assert(
-      size.owner == client,
-      "Text picker owned by " .. tostring(size.owner) .. " at " .. size.columns .. "x" .. size.rows
-    )
-  end)
 end)
 
 -- Remove only registry entries belonging to sessions this check created.

@@ -26,11 +26,6 @@ function M.tool(name)
   if tools[name] then
     return tools[name]
   end
-  if name == "extrakto" then
-    local dir = os.getenv("REX_EXTRAKTO_DIR")
-    assert(dir, "Extrakto is not configured; rebuild the Rex tools configuration")
-    return dir .. "/extrakto.py"
-  end
   local user = os.getenv("USER")
   local dirs = { "/run/current-system/sw/bin", "/opt/homebrew/bin", "/usr/bin", "/bin" }
   if user then
@@ -52,16 +47,6 @@ function M.call(method, args)
   return result
 end
 
-function M.app_client(id)
-  if not id then
-    return nil
-  end
-  local inspected = M.call("client.inspect", { client_id = id })
-  if inspected.client.info and inspected.client.info.kind == "app" then
-    return id
-  end
-end
-
 function M.terminal(origin, method, args)
   return M.call(M.creator .. "." .. method, {
     session_id = origin.session_id,
@@ -75,19 +60,6 @@ function M.exec(argv, opts)
   assert(result, err)
   assert(result.ok, result.stderr ~= "" and result.stderr or (argv[1] .. " failed"))
   return result.stdout
-end
-
-function M.quote(value)
-  assert(type(value) == "string" and not value:find("%z"), "Invalid shell argument")
-  return "'" .. value:gsub("'", "'\\''") .. "'"
-end
-
-function M.command(argv)
-  local quoted = {}
-  for i, value in ipairs(argv) do
-    quoted[i] = M.quote(value)
-  end
-  return table.concat(quoted, " ")
 end
 
 function M.expand(path)
@@ -145,10 +117,9 @@ function M.origin(ctx)
             session_id = ctx.session_id,
             window_id = window.window_id,
             block_id = block_id,
-            client_id = ctx.client_id,
           }
           origin.cwd = M.cwd(origin)
-          return origin, window
+          return origin
         end
       end
     end
@@ -172,36 +143,6 @@ function M.layout(cwd, command, keep)
   })
 end
 
-function M.launch(kind, origin, args)
-  local status = M.call("server.status")
-  local endpoint = status.listeners and status.listeners[1] and status.listeners[1].endpoint
-  assert(endpoint, "Rex did not report its server endpoint")
-  local argv = { M.tool("rex"), "--autostart=false", "-S", endpoint }
-  local client_id = M.app_client(origin.client_id)
-  if client_id then
-    argv[#argv + 1] = "-C"
-    argv[#argv + 1] = client_id
-  end
-  argv[#argv + 1] = "do"
-  argv[#argv + 1] = "-s"
-  argv[#argv + 1] = origin.session_id
-  argv[#argv + 1] = "-b"
-  argv[#argv + 1] = origin.block_id
-  argv[#argv + 1] = M.directory .. "/cli.lua"
-  argv[#argv + 1] = "--args"
-  argv[#argv + 1] = assert(rex.json.encode({ kind = kind, origin = origin, options = args or {} }))
-  local handle, err = rex.exec.start(argv, {
-    detach = true,
-    env = { REX_CLIENT = client_id or false },
-    stdout = false,
-    stderr = function(data)
-      rex.log("error", "Rex workflow: " .. data)
-    end,
-  })
-  assert(handle, err)
-  return { pid = handle.pid }
-end
-
 function M.read(path)
   local file = io.open(path, "rb")
   if not file then
@@ -216,85 +157,6 @@ function M.write(path, data)
   local file = assert(io.open(path, "wb"))
   assert(file:write(data))
   assert(file:close())
-end
-
--- Each worker owns exactly this directory and its own floating layer. Native
--- close_layer restores the previous focus without selecting a session or tab.
-function M.popup(origin, build)
-  local root = "/tmp/opencode/rex-workflows"
-  M.exec({ "/bin/mkdir", "-p", root })
-  local dir = M.exec({ "/usr/bin/mktemp", "-d", root .. "/" .. M.timestamp .. ".XXXXXX" })
-    :gsub("\n$", "")
-  local layer, files = nil, {}
-  local function file(name, data)
-    local path = dir .. "/" .. name
-    files[#files + 1] = path
-    if data ~= nil then
-      M.write(path, data)
-    end
-    return path
-  end
-  local ok, result = pcall(function()
-    M.call("session.attach", { session_id = origin.session_id })
-    local command, output = build(file)
-    layer = M.call("session.new_layer", {
-      session_id = origin.session_id,
-      window_id = origin.window_id,
-      bounds = { 0.1, 0.1, 0.8, 0.8 },
-      focus = true,
-      layout = M.layout(origin.cwd, command, true),
-    })
-    -- Creation claims the pane for this worker at its default 80x24 size.
-    -- Let the viewing app claim it and apply its actual terminal dimensions.
-    M.call("session.disown_block", {
-      session_id = origin.session_id,
-      block_ids = layer.block_ids,
-    })
-    while true do
-      local process, err = rex.call(M.creator .. ".process", {
-        session_id = origin.session_id,
-        block_id = layer.block_ids[1],
-        args = {},
-      })
-      if not process then
-        assert(tostring(err):find("not_found"), err or "Cannot inspect floating terminal")
-        return nil
-      end
-      if process.last_exit then
-        -- fzf cancellation and failures must never apply a partial output file.
-        if process.last_exit.exit_code ~= 0 then
-          return nil
-        end
-        break
-      end
-      rex.sleep(0.1)
-    end
-    return output and M.read(output) or nil
-  end)
-  if layer then
-    local closed, err =
-      rex.call("session.close_layer", { session_id = origin.session_id, layer_id = layer.layer_id })
-    if not closed and err and not tostring(err):find("not_found") then
-      rex.log("warn", tostring(err))
-    end
-  end
-  for _, path in ipairs(files) do
-    os.remove(path)
-  end
-  -- rmdir cannot recursively erase files the worker didn't create.
-  rex.exec({ "/bin/rmdir", dir })
-  assert(ok, result)
-  return result
-end
-
-function M.fzf(file, candidates, options)
-  local input, output = file("candidates", candidates), file("selection")
-  local argv = { M.tool("fzf"), "--no-multi", "--layout=reverse", "--border", "--no-ansi" }
-  for _, option in ipairs(options or {}) do
-    argv[#argv + 1] = option
-  end
-  local script = M.command(argv) .. " < " .. M.quote(input) .. " > " .. M.quote(output)
-  return { M.tool("zsh"), "-f", "-c", script }, output
 end
 
 return M

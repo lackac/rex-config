@@ -69,8 +69,8 @@ session picker. Native Cmd-based Rex shortcuts remain available.
 | Prefix Shift+X | Confirm closing the entire session |
 | Prefix `[` | Native vi-style copy mode |
 | Prefix Ctrl+C / Ctrl+V | Copy current selection / paste clipboard |
-| Prefix Tab | Extract text from this tab's terminal histories |
-| Prefix `o` / `u` | Extract paths / URLs |
+| Prefix Tab | Show hints over the focused pane's live screen |
+| Prefix `u` | Find web URLs in the focused pane's scrollback with fzf |
 | Cmd+F5 | Reload Lua configuration |
 
 Recent-session switching lets Rex choose the destination tab. Prefix `s` is no
@@ -102,11 +102,16 @@ it explicitly with `rex do project_open path="$HOME"`. Opening that path can
 reuse an existing home-directory session with another name, such as
 `Onboarding`, without renaming it.
 
-The text picker captures terminal histories in the originating tab, including
-floating panes. Enter copies; Tab pastes literal text into the original pane,
-without Enter; Ctrl+O opens a local path or HTTP(S)/mailto URL. Control characters
-are rejected for insertion. Ctrl+A/W/P/U/L selects all/words/paths/URLs/lines.
-Extrakto supplies tokenization; none of the selected text is shell-evaluated.
+Prefix Tab labels paths, URLs, hashes, UUIDs, and IPv4 addresses on the focused
+pane's live screen. Type a hint, then press Enter or `c` to copy the match. Hints
+do not search scrollback, and a URL wrapped across screen rows may be cut off.
+
+Prefix `u` opens a floating fzf picker for HTTP(S) URLs from the focused pane,
+including recent scrollback. It rejoins URLs split by terminal line wrapping.
+Enter opens the selection, Ctrl+Y copies it, and Tab marks multiple URLs.
+
+Prefix `o` is no longer bound. See [vendored modules](vendor/README.md) for the
+plugin versions and local changes.
 
 ## Neovim and Hammerspoon
 
@@ -120,35 +125,32 @@ Ghostty/tmux: their RPC currently requires tmux pane IDs.
 
 ## Checks and limits
 
-Background worker errors are recorded in `~/.local/state/rex/workflows.log`
-(mode 0600), so failures remain visible after the launching key action returns.
-
 ```sh
 luajit tests/navigation.lua
 luajit tests/workflows.lua
+zsh tests/man-picker.zsh
+bash tests/fzf-url.sh
 stylua --check .
 ```
 
 Without a standalone LuaJIT, use `nvim --headless -u NONE -l tests/workflows.lua`
 (and the same command for `tests/navigation.lua`).
 
-`tests/runtime.lua` checks real project identity, command/cwd propagation, popup
-selection/cancellation/cleanup/focus, capture, and tool paths. Run it only against
-a private test server, with `XDG_STATE_HOME` under `/tmp/opencode/rex-integration/`.
-It substitutes harmless `cat` processes for project workloads and closes only
-its own test sessions.
-`tests/worker-runtime.lua` additionally exercises launching a real background
-worker from a server action and cancelling its interactive fzf terminal.
+`tests/runtime.lua` checks project reuse across canonical paths and session
+renames, the two-tab layout, pane working directories, and configured tool paths.
+Run it only against a private test server, with `XDG_STATE_HOME` under
+`/tmp/opencode/rex-integration/`. It runs `cat` in place of project workloads and
+closes only its own test sessions.
+
 `tests/neovim-harness.lua nvim=PATH` checks the configured Neovim's real handoff
 to a Rex neighbor and generic navigation back. Start the private server with
 `REX_SERVER` set to its test socket, just as the Mac app sets it for its server.
 
 `tests/client-regressions.lua` checks visible app selection, numeric tabs,
-recent-tab/session toggles, existing/new projects, `main`, and text picker popup
-ownership. It requires Hammerspoon IPC for read-only window-title checks,
-briefly changes the app's view, and starts a disposable OpenCode session. Pass
-the app's full client ID and a session to return to; only sessions created by
-the check are closed:
+recent-tab/session toggles, existing and new projects, and `main`. It requires
+Hammerspoon IPC for read-only window-title checks, briefly changes the app's
+view, and starts a disposable OpenCode session. Pass the app's full client ID
+and a session to return to; only sessions created by the check are closed:
 
 ```sh
 rex -C APP_ID do ./tests/client-regressions.lua \
