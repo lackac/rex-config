@@ -1,19 +1,6 @@
 local common = require("common")
 local M = {}
 
-local function new_tab(ctx)
-  local origin = common.origin(ctx)
-  local name = rex.ui.input({ title = "New tab", placeholder = "Tab name" })
-  if not name then
-    return
-  end
-  return common.call("session.new_window", {
-    session_id = origin.session_id,
-    window_label = name,
-    layout = common.layout(origin.cwd),
-  })
-end
-
 local function command_split(origin, argv)
   return common.call("session.new_split", {
     session_id = origin.session_id,
@@ -33,7 +20,6 @@ local function command_split(origin, argv)
 end
 
 function M.setup()
-  rex.action({ name = "tab_new", title = "New named tab…", run = new_tab })
   rex.action({
     name = "split_editor",
     title = "Editor beside pane",
@@ -46,26 +32,6 @@ function M.setup()
     title = "Lazygit beside pane",
     run = function(ctx)
       return command_split(common.origin(ctx), { common.tool("lazygit") })
-    end,
-  })
-  rex.action({
-    name = "tab_ssh",
-    title = "SSH in a new tab…",
-    run = function(ctx)
-      local origin = common.origin(ctx)
-      local host = rex.ui.input({ title = "SSH to", placeholder = "user@host" })
-      if not host or host == "" then
-        return
-      end
-      assert(not host:find("[%c%s]") and host:sub(1, 1) ~= "-", "Enter a host, not SSH options")
-      return common.call("session.new_window", {
-        session_id = origin.session_id,
-        window_label = host,
-        layout = common.layout(
-          origin.cwd,
-          { common.tool("zsh"), "-lic", 'exec ssh -- "$1"', "rex-ssh", host }
-        ),
-      })
     end,
   })
   rex.action({
@@ -88,8 +54,8 @@ function M.setup()
     k = { "project_picker" },
     ["ctrl+e"] = { "session.recent" },
     ["ctrl+s"] = { "client.tab.recent.in_session" },
-    c = { "tab_new" },
-    s = { "tab_ssh" },
+    c = { "client.tab.new" },
+    [","] = { "client.tab.rename" },
     ["'"] = { "pane.go_to" },
     f = { "popup_scratch" },
     l = { "popup_lazygit" },
