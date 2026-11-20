@@ -247,7 +247,7 @@ function render(state, lines, cols, rows) {
   return "\x1b[?7l\x1b[H\x1b[2J" + out.join("\r\n");
 }
 
-const run = (cmd, args, input) => execFileSync(cmd, args, { input, encoding: "utf8", maxBuffer: Infinity });
+const run = (cmd, args, input) => execFileSync(cmd, args, { input, encoding: "utf8", maxBuffer: Infinity, stdio: "pipe" });
 
 // The last `bytes` of a pane's output, so huge scrollbacks are never read whole.
 // `format` answers with `content` (whole, or only its head plus a blob `id`);
@@ -318,8 +318,9 @@ function editCommand(editor, t) {
 
 // The chosen action. `exec` and `write` are swapped in tests.
 function runAction(action, item, ctx, exec = run, write = (s) => process.stdout.write(s)) {
+  const rex = ctx.rex ?? "rex";
   const api = (method, body) =>
-    exec("rex", ["api", "call", "-s", ctx.session, method, "-"], JSON.stringify({ session_id: ctx.session, ...body }));
+    exec(rex, ["api", "call", "-s", ctx.session, method, "-"], JSON.stringify({ session_id: ctx.session, ...body }));
   // OSC 52: the Rex app showing this pane copies, so a pane on another host
   // copies onto the Mac you're at. Rex applies it only while it's frontmost.
   if (action === "copy") return write(`\x1b]52;c;${Buffer.from(item.text).toString("base64")}\x07`);
@@ -328,7 +329,7 @@ function runAction(action, item, ctx, exec = run, write = (s) => process.stdout.
     // shortcut: a command wrapped onto more rows still gets a click (which does nothing); join its rows if that matters.
     if (ctx.prompt && ctx.prompt.row === item.row) {
       const keys = arrowsTo(ctx.prompt.line, ctx.prompt.col, item.col);
-      if (keys.length) exec("rex", ["send-key", "-s", ctx.session, "-b", ctx.block, ...keys]);
+      if (keys.length) exec(rex, ["send-key", "-s", ctx.session, "-b", ctx.block, ...keys]);
       return;
     }
     for (const a of ["press", "release"]) {
@@ -343,7 +344,7 @@ function runAction(action, item, ctx, exec = run, write = (s) => process.stdout.
     return exec(ctx.leaf, ["rex", "place", ctx.block, path.basename(target), "--", "open", target]);
   }
   // The viewer's init.lua defines open_url (see README.md).
-  if (action === "open" && ctx.viewer && isWeb(item)) return exec("rex", ["-S", ctx.viewer, "do", "open_url", "--args", JSON.stringify({ url: item.text })]);
+  if (action === "open" && ctx.viewer && isWeb(item)) return exec(rex, ["-S", ctx.viewer, "do", "open_url", "--args", JSON.stringify({ url: item.text })]);
   if (action === "open") return exec("open", [item.kind === "url" ? item.text : parseTarget(item.text, ctx.cwd, ctx.home).file]);
   const t = parseTarget(item.text, ctx.cwd, ctx.home);
   const layout = { block: { flavor: SHELL, label: "edit", options: {
@@ -355,13 +356,14 @@ function runAction(action, item, ctx, exec = run, write = (s) => process.stdout.
 
 function main() {
   const [session, block, zoomed, mode, where, editor] = process.argv.slice(2);
+  const rex = process.env.REX_BIN_DIR ? path.join(process.env.REX_BIN_DIR, "rex") : "rex";
   const remote = Boolean(where) && where !== "local";
   const viewer = remote && where !== "remote" ? where : undefined;
   const leaf = (process.env.PATH ?? "").split(path.delimiter).filter(Boolean).map((dir) => path.join(dir, "leaf"))
     .find((file) => { try { fs.accessSync(file, fs.constants.X_OK); return true; } catch { return false; } });
-  const ctx = { session, block, cwd: process.cwd(), home: os.homedir(), viewer, leaf, editor: editor || undefined };
+  const ctx = { session, block, rex, cwd: process.cwd(), home: os.homedir(), viewer, leaf, editor: editor || undefined };
   const { stdin, stdout: out } = process;
-  const call = (method, args) => JSON.parse(run("rex", ["block", "call", "-s", session, "-b", block, method, JSON.stringify(args ?? {})]));
+  const call = (method, args) => JSON.parse(run(rex, ["block", "call", "-s", session, "-b", block, method, JSON.stringify(args ?? {})]));
   const tail = (format, bytes, extra) => readTail(call, format, bytes, extra);
   let state, lines, failing = false;
   // Read the source screen and hint what this picker shows; again on resize,
@@ -376,13 +378,24 @@ function main() {
     out.write("\x1b[?7h\x1b[?25h\x1b[?1049l");
     if (stdin.isTTY) stdin.setRawMode(false);
   };
+  const close = (returnToSource) => {
+    if (returnToSource) {
+      // The layer can otherwise leave a different split focused. The source may no longer exist.
+      const zoom = zoomed === "1";
+      const method = zoom ? "session.zoom_block" : "session.focus_block";
+      const body = { session_id: session, block_id: block, ...(zoom ? { zoom: true } : {}) };
+      try { run(rex, ["api", "call", "-s", session, method, "-"], JSON.stringify(body)); } catch {}
+    }
+    restore();
+    process.exit(0);
+  };
   // Errors stay on screen until a key; exit 0 so Rex doesn't keep a dead pane.
   const fail = (e) => {
     if (failing) return;
     failing = true;
     stdin.removeAllListeners("data");
     out.write(`\x1b[?7h\x1b[H\x1b[2J hints: ${String(e?.message ?? e).trim()}\r\n any key closes`);
-    stdin.once("data", () => { restore(); process.exit(0); });
+    stdin.once("data", () => close(true));
   };
   const draw = () => out.write(render(state, lines, out.columns, out.rows));
   const finish = (done) => {
@@ -390,11 +403,7 @@ function main() {
     if (done.action === "move") ctx.prompt = promptOf(tail("vt", 64, { extra_cursor: true }).text, call("modes"), lines);
     if (done.action !== "cancel") runAction(done.action, done.item, ctx);
     const newPane = ["edit", "tab"].includes(done.action) || (done.action === "open" && leaf && forLeaf(done.item));
-    if (zoomed === "1" && !newPane) {
-      run("rex", ["api", "call", "-s", session, "session.zoom_block", "-"], JSON.stringify({ session_id: session, block_id: block, zoom: true }));
-    }
-    restore();
-    process.exit(0);
+    close(!newPane);
   };
 
   process.on("uncaughtException", fail);
