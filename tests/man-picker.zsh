@@ -39,7 +39,7 @@ run_picker() {
 }
 
 [[ $(run_picker 'demo(3)') == $'<-S>\n<3>\n<-->\n<demo>' ]]
-diff - "$CATALOG" <<'CATALOG'
+diff - <(LC_ALL=C sort "$CATALOG") <<'CATALOG'
 -sample name(1)
 Tcl(ntcl)
 alias(1)
