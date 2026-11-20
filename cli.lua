@@ -9,9 +9,7 @@ local common = require("common")
 local ok, result = pcall(function()
   local origin, options = assert(args.origin, "Missing workflow origin"), args.options or {}
   common.call("session.attach", { session_id = origin.session_id })
-  if args.kind == "popup" then
-    return require("popups").run(origin)
-  elseif args.kind == "text" then
+  if args.kind == "text" then
     return require("text").picker(origin, options)
   end
   error("Unknown Rex workflow")

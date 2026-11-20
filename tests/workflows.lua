@@ -180,6 +180,29 @@ end
 local explicit = common.origin({ session_id = origin.session_id, block_id = "block:other" })
 equal(explicit.window_id, "window:other")
 
+-- Lazygit opens in the originating tab and lets Rex manage its lifetime.
+local layer = { layer_id = "layer:lazygit", block_ids = { "block:lazygit" } }
+handlers["session.new_layer"] = function(args)
+  equal(args.session_id, explicit.session_id)
+  equal(args.window_id, explicit.window_id)
+  equal(table.concat(args.bounds, ","), "0.1,0.1,0.8,0.8")
+  equal(args.focus, true)
+  local options = args.layout.block.options
+  equal(options.cwd, explicit.cwd)
+  equal(options.exit, nil)
+  equal(
+    table.concat(options.command, "\n"),
+    '/tools/zsh\n-lic\nexec "$1"\nrex-lazygit\n/tools/lazygit'
+  )
+  return layer
+end
+local calls_before = #calls
+equal(
+  actions.popup_lazygit.run({ session_id = explicit.session_id, block_id = explicit.block_id }),
+  layer
+)
+equal(#calls - calls_before, 3) -- Read the origin and cwd, then create the layer.
+
 -- Registry identity survives session renames, does not depend on a basename,
 -- and does not let a managed project's changed cwd claim a different project.
 local sessions = {
