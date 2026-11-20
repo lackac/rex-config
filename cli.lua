@@ -11,6 +11,8 @@ local ok, result = pcall(function()
   common.call("session.attach", { session_id = origin.session_id })
   if args.kind == "popup" then
     return require("popups").run(origin, options.popup)
+  elseif args.kind == "projects" then
+    return require("projects").picker(origin)
   end
   error("Unknown Rex workflow")
 end)

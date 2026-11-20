@@ -61,10 +61,12 @@ rex = {
 }
 
 local common = require("common")
+local projects = require("projects")
 require("popups").setup()
+projects.setup()
 equal(#calls, 0)
 equal(#commands, 0)
-for _, name in ipairs({ "popup_scratch", "popup_lazygit" }) do
+for _, name in ipairs({ "project_open", "project_picker", "popup_scratch", "popup_lazygit" }) do
   assert(actions[name], "Missing " .. name)
 end
 
@@ -80,6 +82,8 @@ equal(commands[#commands].argv[6], "/a directory/alias")
 fails(function()
   common.canonical("/x\ny")
 end, "Invalid path")
+equal(projects.name(os.getenv("HOME")), "main")
+equal(projects.name("/some/example-project"), "example-project")
 
 local function block(id)
   return { block_id = id, creator_name = common.creator }
@@ -163,6 +167,25 @@ end
 local explicit = common.origin({ session_id = origin.session_id, block_id = "block:other" })
 equal(explicit.window_id, "window:other")
 
+-- Registry identity survives session renames, does not depend on a basename,
+-- and does not let a managed project's changed cwd claim a different project.
+local sessions = {
+  { session_id = "session:full-a", label = "renamed" },
+  { session_id = "session:full-b", label = "project" },
+}
+equal(
+  projects.existing("/a/project", sessions, { ["/a/project"] = "session:full-a" }),
+  "session:full-a"
+)
+equal(
+  projects.existing("/origin dir", sessions, {
+    ["/a/project"] = "session:full-a",
+    ["/b/project"] = "session:full-b",
+  }),
+  nil
+)
+equal(projects.existing("/origin dir", sessions, {}), "session:full-a")
+
 local memory = {}
 local real_rename, real_remove = os.rename, os.remove
 os.rename = function(from, to)
@@ -180,8 +203,58 @@ end
 common.write = function(path, value)
   memory[path] = value
 end
+local creates = 0
+handlers["session.list"] = function()
+  return { sessions = sessions }
+end
+handlers["session.create"] = function(args)
+  creates = creates + 1
+  equal(#args.initial_windows, 2)
+  equal(args.initial_windows[1].layout.block.options.cwd, "/new/project")
+  local command = args.initial_windows[1].layout.block.options.command
+  equal(command[1], "/tools/zsh")
+  assert(command[3]:find('exec "%$2" %-il'))
+  sessions[#sessions + 1] = { session_id = "session:created", label = args.label }
+  return {
+    session_id = "session:created",
+    initial_windows = { { window_id = "window:opencode" }, { window_id = "window:shell" } },
+  }
+end
+handlers["session.focus_window"] = function(args)
+  equal(args.window_id, "window:opencode")
+  return {}
+end
+local opened = projects.open({ client_id = "client:origin" }, "/new/alias")
+equal(opened.session_id, "session:created")
+equal(projects.open({}, "/new/project").session_id, "session:created")
+equal(creates, 1)
+equal(queued[#queued].args.session_id, "session:created")
+handlers["client.inspect"] = function()
+  return { client = { info = { kind = "cli" } } }
+end
+local queued_before = #queued
+projects.open({ client_id = "client:worker" }, "/new/project")
+equal(#queued, queued_before + 1)
+equal(queued[#queued].args.session_id, "session:created")
+handlers["session.list"] = function()
+  return { sessions = {} }
+end
+handlers["session.create"] = function(args)
+  equal(#args.initial_windows, 1)
+  equal(args.label, "main")
+  return { session_id = "session:main", initial_windows = { { window_id = "window:opencode" } } }
+end
+projects.open({}, os.getenv("HOME"))
 
+-- Cancelling the project picker applies no selection.
+local real_popup = common.popup
+common.popup = function()
+  return nil
+end
 local before = #queued
+equal(projects.picker(origin), nil)
+equal(#queued, before)
+common.popup = real_popup
 
 -- Popup cleanup is scoped to its own full IDs; there is no focus/select call.
 handlers["session.new_layer"] = function(args)
