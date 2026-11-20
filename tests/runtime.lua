@@ -65,13 +65,15 @@ local ok, err = pcall(function()
   after = common.call("session.view", { session_id = first.session_id })
   assert(#after.windows[1].layers == 1, "Cancelled popup left a floating layer")
 
+  local captured = require("text").capture(origin, { origin.block_id })
+  assert(type(captured) == "string")
   local tools = assert(loadfile(os.getenv("HOME") .. "/.local/share/rex/tools.lua"))()
   for name, path in pairs(tools) do
     local file = assert(io.open(path, "r"), "Missing tool: " .. name)
     file:close()
   end
   print(
-    "Rex runtime: canonical project reuse, renamed sessions, two tabs, popup selection/cancel/focus/cleanup and tools passed"
+    "Rex runtime: canonical project reuse, renamed sessions, two tabs, popup selection/cancel/focus/cleanup, capture and tools passed"
   )
 end)
 

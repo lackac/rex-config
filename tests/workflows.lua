@@ -62,11 +62,19 @@ rex = {
 
 local common = require("common")
 local projects = require("projects")
+local text = require("text")
 require("popups").setup()
 projects.setup()
+text.setup()
 equal(#calls, 0)
 equal(#commands, 0)
-for _, name in ipairs({ "project_open", "project_picker", "popup_scratch", "popup_lazygit" }) do
+for _, name in ipairs({
+  "project_open",
+  "project_picker",
+  "text_picker",
+  "popup_scratch",
+  "popup_lazygit",
+}) do
   assert(actions[name], "Missing " .. name)
 end
 
@@ -156,7 +164,7 @@ rex.exec = setmetatable({
     return exec(...)
   end,
 })
-equal(common.launch("popup", origin, { popup = "scratch" }).pid, 123)
+equal(common.launch("text", origin, { mode = "paths" }).pid, 123)
 handlers["client.inspect"] = function()
   return { client = { info = { kind = "cli" } } }
 end
@@ -246,12 +254,70 @@ handlers["session.create"] = function(args)
 end
 projects.open({}, os.getenv("HOME"))
 
--- Cancelling the project picker applies no selection.
+-- Capture precisely the origin window, including floating terminal histories,
+-- with byte offsets when terminal.format returns a multipart result.
+handlers[common.creator .. ".format"] = function(args)
+  if args.block_id == "block:origin" then
+    return { content = "first", id = 42 }
+  end
+  return { content = args.block_id }
+end
+handlers[common.creator .. ".blob_read"] = function(args)
+  equal(args.args.id, 42)
+  equal(args.args.offset, 5)
+  return { data = "-rest", eof = true }
+end
+equal(
+  text.capture(origin, { "block:origin", "block:split", "block:floating" }),
+  "first-rest\nblock:split\nblock:floating"
+)
+local captured
+local real_launch = common.launch
+common.launch = function(kind, target, args)
+  captured = { kind = kind, origin = target, args = args }
+end
+actions.text_picker.run({ session_id = origin.session_id, block_id = origin.block_id }, {})
+equal(#captured.args.blocks, 3)
+equal(captured.args.blocks[3], "block:floating")
+equal(captured.origin.block_id, "block:origin")
+common.launch = real_launch
+
+-- Literal insertion is a paste to the saved full ID, never a command or Enter.
+handlers["block.event"] = function(args)
+  equal(args.session_id, origin.session_id)
+  equal(args.block_id, origin.block_id)
+  equal(args.event.type, "paste")
+  equal(args.event.payload.text, "$(touch nope); literal")
+  return {}
+end
+text.apply(origin, "tab", "$(touch nope); literal")
+text.apply(origin, "", "clipboard value")
+equal(commands[#commands].argv[1], "/usr/bin/pbcopy")
+equal(commands[#commands].opts.stdin, "clipboard value")
+equal(text.open_target("https://example.test/a?q=x", origin.cwd), "https://example.test/a?q=x")
+equal(text.open_target("a file; $(nope)", origin.cwd), "/origin dir/a file; $(nope)")
+equal(commands[#commands].argv[6], "/origin dir/a file; $(nope)")
+equal(text.open_target("file:///origin%20dir/file", origin.cwd), "/origin dir/file")
+fails(function()
+  text.open_target("javascript:alert(1)", origin.cwd)
+end, "unsafe")
+fails(function()
+  text.open_target("file://remote/file", origin.cwd)
+end, "local")
+fails(function()
+  text.apply(origin, "tab", "echo dangerous\n")
+end, "control")
+fails(function()
+  text.apply(origin, "tab", "echo\tcompletion")
+end, "control")
+
+-- Cancelled text/project pickers apply nothing and never bypass session_close.
 local real_popup = common.popup
 common.popup = function()
   return nil
 end
 local before = #queued
+equal(text.picker(origin, { blocks = { origin.block_id } }), nil)
 equal(projects.picker(origin), nil)
 equal(#queued, before)
 common.popup = real_popup

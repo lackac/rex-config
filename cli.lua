@@ -13,6 +13,8 @@ local ok, result = pcall(function()
     return require("popups").run(origin, options.popup)
   elseif args.kind == "projects" then
     return require("projects").picker(origin)
+  elseif args.kind == "text" then
+    return require("text").picker(origin, options)
   end
   error("Unknown Rex workflow")
 end)
