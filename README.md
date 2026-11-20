@@ -24,9 +24,10 @@ sudo darwin-rebuild switch --flake "$HOME/Code/lackac/nix-config#lithium" \
 This command is documented, not run automatically. Reload Hammerspoon after
 activation to apply its terminal preference changes.
 
-Enable **Remote Control** in Rex's **Settings → Rex Server**. Background picker
-workers need it to select a session in the app. Nothing here changes permissions
-or exposes the server on the network.
+The key-driven project picker selects sessions in the app without a detached
+CLI. CLI-driven app selection and tests may still need **Remote Control** in
+Rex's **Settings → Rex Server**. Nothing here changes permissions or exposes the
+server on the network.
 
 Check edits before reloading:
 
@@ -48,18 +49,18 @@ session picker. Native Cmd-based Rex shortcuts remain available.
 
 | Key | Action |
 | --- | --- |
-| Ctrl+arrows | Smart navigation between Rex panes and Neovim splits |
+| Ctrl+arrows or Ctrl+H/J/K/L | Smart navigation between Rex panes and Neovim splits |
 | Prefix Ctrl+A | Send Ctrl+A to the terminal |
 | Prefix `;` or `k` | Project picker |
 | Prefix Ctrl+E | Toggle recent session |
 | Prefix Ctrl+S | Toggle recent tab within the session |
 | Prefix `1`–`9` | Select tab by number |
 | Prefix `n` / `p` | Next / previous tab |
-| Prefix `c` / `s` | Named tab / SSH tab |
+| Prefix `c` / `,` | Rex's native New Tab / Rename Tab |
 | Prefix `'` | Rex's native Go to Anything picker |
-| Prefix `f` / `l` | Floating scratch shell / lazygit |
+| Prefix `f` / `l` | Rex's native floating pane / floating lazygit |
 | Prefix `v` / `g` | Neovim / lazygit in a left split |
-| Prefix `m` | Manual page in a split |
+| Prefix `m` | Browse manual page names and sections with fzf in a focused right-side 50/50 split |
 | Prefix `\|` / `-` | Split right / below |
 | Prefix arrows | Focus pane |
 | Prefix Shift+H/J/K/L | Resize pane |
@@ -72,29 +73,34 @@ session picker. Native Cmd-based Rex shortcuts remain available.
 | Prefix `o` / `u` | Extract paths / URLs |
 | Cmd+F5 | Reload Lua configuration |
 
-Recent-session switching lets Rex choose the destination tab.
+Recent-session switching lets Rex choose the destination tab. Prefix `s` is no
+longer bound.
+
+Turn off Rex's **Autobalance splits** so the left split opened by Prefix `v` or
+`g` takes 62% of the width.
 
 Option+arrows send Alt+B/F; Option+Backspace sends Ctrl+W. The configured
 Option-letter editing keys are forwarded as Alt rather than composed symbols.
 
 ## Projects and text
 
-The project picker combines live Rex sessions, configuration repositories, and
-zoxide directories. Ctrl+A shows all; Ctrl+T shows sessions; Ctrl+G shows
-configured destinations; Ctrl+D shows zoxide. Ctrl+B searches names and Ctrl+P
-searches paths. Directory previews use `tree`.
+The project picker lists live Rex sessions first, followed by zoxide directories.
+Type to filter by name or path using Rex's native filter.
 
-Opening a project creates OpenCode and Shell tabs. Reopening uses its canonical
-path and saved full session ID, so renaming a session or changing a pane's cwd
-doesn't duplicate its running work. State lives at
-`~/.local/state/rex/projects.json`. Explicit opening is also available:
+A new project session starts with OpenCode and Shell tabs, or only a Shell tab
+for the home directory. Reopening a project uses its canonical path and saved
+full session ID, so renaming a session or changing a pane's cwd doesn't
+duplicate its running work. State lives at `~/.local/state/rex/projects.json`.
+Explicit opening is also available:
 
 ```sh
 rex do project_open path="$HOME/Code/lackac/nix-config"
 ```
 
-`main` means the home directory. It can reuse an existing home-directory session
-with another name, such as `Onboarding`; opening it does not rename that session.
+`main` means the home directory. Select it if it appears in the picker, or open
+it explicitly with `rex do project_open path="$HOME"`. Opening that path can
+reuse an existing home-directory session with another name, such as
+`Onboarding`, without renaming it.
 
 The text picker captures terminal histories in the originating tab, including
 floating panes. Enter copies; Tab pastes literal text into the original pane,
@@ -137,12 +143,12 @@ worker from a server action and cancelling its interactive fzf terminal.
 to a Rex neighbor and generic navigation back. Start the private server with
 `REX_SERVER` set to its test socket, just as the Mac app sets it for its server.
 
-`tests/client-regressions.lua` verifies visible app selection, numeric tabs,
-recent-tab/session toggles, existing/new projects, `main`, and popup ownership.
-It requires Hammerspoon IPC for read-only window-title checks, briefly changes
-the app's view, and starts a disposable OpenCode session. Pass the app's full
-client ID and a session to return to; only sessions created by the check are
-closed:
+`tests/client-regressions.lua` checks visible app selection, numeric tabs,
+recent-tab/session toggles, existing/new projects, `main`, and text picker popup
+ownership. It requires Hammerspoon IPC for read-only window-title checks,
+briefly changes the app's view, and starts a disposable OpenCode session. Pass
+the app's full client ID and a session to return to; only sessions created by
+the check are closed:
 
 ```sh
 rex -C APP_ID do ./tests/client-regressions.lua \
