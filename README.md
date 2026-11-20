@@ -72,6 +72,8 @@ session picker. Native Cmd-based Rex shortcuts remain available.
 | Prefix `o` / `u` | Extract paths / URLs |
 | Cmd+F5 | Reload Lua configuration |
 
+Recent-session switching lets Rex choose the destination tab.
+
 Option+arrows send Alt+B/F; Option+Backspace sends Ctrl+W. The configured
 Option-letter editing keys are forwarded as Alt rather than composed symbols.
 
@@ -136,18 +138,16 @@ to a Rex neighbor and generic navigation back. Start the private server with
 `REX_SERVER` set to its test socket, just as the Mac app sets it for its server.
 
 `tests/client-regressions.lua` verifies visible app selection, numeric tabs,
-existing/new projects, `main`, and popup ownership. It requires Hammerspoon IPC
-for read-only window-title checks, briefly changes the app's view, and starts a
-disposable OpenCode session. Pass the app's full client ID and a session to return
-to; only sessions created by the check are closed:
+recent-tab/session toggles, existing/new projects, `main`, and popup ownership.
+It requires Hammerspoon IPC for read-only window-title checks, briefly changes
+the app's view, and starts a disposable OpenCode session. Pass the app's full
+client ID and a session to return to; only sessions created by the check are
+closed:
 
 ```sh
 rex -C APP_ID do ./tests/client-regressions.lua \
-  client=APP_ID return_session=SESSION_ID history=false
+  client=APP_ID return_session=SESSION_ID
 ```
-
-`history=false` explicitly skips the two native recent-history checks. Omit it
-when testing a server that supports those actions.
 
 Session closing always asks for confirmation: foreground-process information
 alone cannot prove that background jobs are safe to terminate. Picker filtering
@@ -162,14 +162,3 @@ Neovim's custom OpenCode pane controls and OpenCode session-link RPC remain
 tmux-specific. App relaunch, updater relaunch, server restart, and sleep/wake
 persistence still need a hands-on trial with disposable workloads. Restored
 layouts do not prove that the original programs survived.
-
-### Native history version blocker
-
-The tested app-bundled preview.21 server (API 18) does not implement
-`focus_history.reverse`. Rex lists `session.recent` and
-`client.tab.recent.in_session`, but refuses to perform them on this server.
-The Ctrl+E/Ctrl+S bindings remain in place; they are not functional on API 18.
-Preview.22 (API 19) advertises the required method. Keep the native bindings and
-wait for Rex's updater to deliver bundled-server support rather than managing a
-separate API version through Nix. Until then, use the session picker and
-numeric/next/previous tab navigation.

@@ -196,13 +196,14 @@ local ok, err = pcall(function()
         session_id = target.session_id,
         action = "session.recent",
       })
-      selected(origin)
+      -- Session history chooses the restored tab; tab toggling is checked above.
+      selected(origin, false)
       common.call("client.perform", {
         client_id = client,
         session_id = id,
         action = "session.recent",
       })
-      selected(target)
+      selected(target, false)
     end)
   end
   check("picker is sized by the app, not its worker", function()
