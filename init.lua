@@ -4,3 +4,4 @@ package.path = root .. "/?.lua;" .. root .. "/?/init.lua;" .. package.path
 require("projects").setup()
 require("popups").setup()
 require("text").setup()
+require("sessions").setup()

@@ -61,9 +61,9 @@ rex = {
 }
 
 local common = require("common")
-local projects = require("projects")
-local text = require("text")
+local projects, text = require("projects"), require("text")
 require("popups").setup()
+require("sessions").setup()
 projects.setup()
 text.setup()
 equal(#calls, 0)
@@ -71,9 +71,10 @@ equal(#commands, 0)
 for _, name in ipairs({
   "project_open",
   "project_picker",
-  "text_picker",
   "popup_scratch",
   "popup_lazygit",
+  "text_picker",
+  "session_close",
 }) do
   assert(actions[name], "Missing " .. name)
 end
@@ -380,5 +381,27 @@ fails(function()
 end, "build failed")
 equal(commands[#commands].argv[1], "/bin/rmdir")
 equal(#queued, before)
+
+-- Close uses the original ID even if focus changes while the question is open;
+-- cancellation/unsupported UI never closes anything. Confirmation is required.
+local destroys = 0
+handlers["session.destroy"] = function(args)
+  equal(args.session_id, origin.session_id)
+  destroys = destroys + 1
+  return {}
+end
+actions.session_close.run({ session_id = origin.session_id })
+equal(destroys, 0)
+rex.ui.pick = function()
+  return nil, "unsupported"
+end
+actions.session_close.run({ session_id = origin.session_id })
+equal(destroys, 0)
+rex.ui.pick = function()
+  view.active_window_id = "window:other"
+  return "close"
+end
+actions.session_close.run({ session_id = origin.session_id })
+equal(destroys, 1)
 os.rename, os.remove = real_rename, real_remove
 print("Workflow tests passed")
