@@ -123,6 +123,11 @@ plugin versions and local changes.
 bindings and foreground-Neovim routing live here. `TMUX` takes precedence when
 Neovim is deliberately nested inside tmux.
 
+Neovim's OpenCode V2 pane controls work in Rex and tmux. When tmux runs inside
+Rex, the controls use tmux. `<leader>as` starts or focuses the OpenCode pane.
+Ctrl+X focuses the pane and forwards OpenCode's native leader key.
+`<leader>aK` closes the pane only if that Neovim instance started it.
+
 Hammerspoon prefers Rex in terminal cycling and layouts, and recognizes Rex
 titles in browser-profile routing. For an approved OpenCode link, the Rex
 action `project_open_opencode` takes three required strings: `path` (project
@@ -187,7 +192,8 @@ In preview.21/22, Rex's macOS `login` launch path ignores a Lua layout's command
 and cwd. `common.layout` uses `login = false` and starts zsh explicitly to keep
 the requested working directory and login-shell initialization.
 
-Neovim's custom OpenCode pane controls remain tmux-specific. App relaunch,
-updater relaunch, server restart, and sleep/wake persistence still need a
-hands-on trial with disposable workloads. Restored layouts do not prove
-that the original programs survived.
+Restarting a private Rex preview.22 server restored the session ID, tab label,
+and block ID. The original disposable `sleep` process did not survive; the
+restored pane started a fresh zsh shell. The trial did not cover a live server
+restart, app relaunch or update, or sleep/wake. Recovery tooling was deliberately
+left uninstalled.
