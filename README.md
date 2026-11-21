@@ -101,9 +101,10 @@ rex do project_open path="$HOME/Code/example-project"
 
 Home Manager installs `terminal-session-name` for picker directories and new
 sessions. The helper shares tmux's private, untracked rules at
-`~/.config/tmux/session-name-rules.csv`. If the helper is unavailable or gives
-no valid reply, Rex uses the directory basename (`main` for home). Existing
-session labels stay as they are. Open home with `rex do project_open path="$HOME"`.
+`${XDG_CONFIG_HOME:-$HOME/.config}/session-name-rules.csv`. If the helper is
+unavailable or gives no valid reply, Rex uses the directory basename (`main` for
+home). Existing session labels stay as they are. Open home with
+`rex do project_open path="$HOME"`.
 
 Prefix Tab labels paths, URLs, hashes, UUIDs, and IPv4 addresses on the focused
 pane's live screen. Type a hint, then press Enter or `c` to copy the match. Hints
