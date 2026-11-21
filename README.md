@@ -96,11 +96,14 @@ Rex stores these associations by canonical path in
 `~/.local/state/rex/projects.json`. Explicit opening is also available:
 
 ```sh
-rex do project_open path="$HOME/Code/lackac/nix-config"
+rex do project_open path="$HOME/Code/example-project"
 ```
 
-`main` means the home directory. Select it if it appears in the picker, or open
-it explicitly with `rex do project_open path="$HOME"`.
+Home Manager installs `terminal-session-name` for picker directories and new
+sessions. The helper shares tmux's private, untracked rules at
+`~/.config/tmux/session-name-rules.csv`. If the helper is unavailable or gives
+no valid reply, Rex uses the directory basename (`main` for home). Existing
+session labels stay as they are. Open home with `rex do project_open path="$HOME"`.
 
 Prefix Tab labels paths, URLs, hashes, UUIDs, and IPv4 addresses on the focused
 pane's live screen. Type a hint, then press Enter or `c` to copy the match. Hints
@@ -137,7 +140,7 @@ managed project. `started` does not indicate RPC readiness. In either case,
 the caller sends the OpenCode session-link RPC to `block_id` and waits for a
 matching acknowledgement. Rex does not pass the conversation ID to the
 process, select an app session, or focus an existing pane. A link can add a
-tab to `main` without changing the plain home project's shell-only default.
+tab to the home session without changing its shell-only default.
 
 ## Checks and limits
 

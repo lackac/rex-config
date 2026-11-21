@@ -31,11 +31,37 @@ local function remember(path, id)
   assert(os.rename(temporary, target))
 end
 
-function M.name(path)
-  if path == os.getenv("HOME") then
-    return "main"
+local function names(paths, home)
+  local defaults, records = {}, {}
+  home = home or os.getenv("HOME")
+  for i, path in ipairs(paths) do
+    local name = path == home and "main" or path:match("([^/]+)$") or path
+    defaults[i] = name
+    if path:sub(1, 1) == "/" and not path:find("[%z\r\n\t]") then
+      records[#records + 1] = path .. "\t" .. name .. "\n"
+    end
   end
-  return path:match("([^/]+)$") or path
+  if #records == 0 or #records ~= #paths then
+    return defaults
+  end
+  local ok, output = pcall(function()
+    return common.exec(
+      { common.tool("terminal-session-name") },
+      { stdin = table.concat(records), timeout = 3 }
+    )
+  end)
+  if not ok or type(output) ~= "string" or output:sub(-1) ~= "\n" then
+    return defaults
+  end
+  local labels = {}
+  for label in output:gmatch("([^\n]*)\n") do
+    if label == "" or label:find("%c") then
+      return defaults
+    end
+    labels[#labels + 1] = label
+  end
+  -- A partial reply cannot safely be matched to directories.
+  return #labels == #paths and labels or defaults
 end
 
 -- Durable path -> full session ID survives renames and changing terminal cwds.
@@ -134,7 +160,9 @@ function M.open(ctx, path, directory)
     local id = live_id(registry()[path], sessions)
     local window
     if not id then
-      local name = M.name(path)
+      local home = assert(os.getenv("HOME"))
+      local shell_only = not directory and path == common.canonical(home)
+      local name = names({ path }, shell_only and path or home)[1]
       for _, session in ipairs(sessions) do
         if session.label == name then
           name = name .. " — " .. path
@@ -143,7 +171,7 @@ function M.open(ctx, path, directory)
       end
       local shell = { window_label = "Shell", layout = common.layout(path) }
       local windows = { shell }
-      if directory or path ~= common.canonical(assert(os.getenv("HOME"))) then
+      if not shell_only then
         windows = {
           { window_label = "OpenCode", layout = opencode_layout(directory or path) },
           shell,
@@ -235,6 +263,7 @@ local function picker(ctx)
       seen[path_key(path)] = true
     end
   end
+  local session_count, paths = #items, {}
   local zoxide = #items < picker_limit
     and rex.exec({ common.tool("zoxide"), "query", "--list" }, { timeout = 3 })
   if zoxide and zoxide.ok then
@@ -246,12 +275,16 @@ local function picker(ctx)
         local key = path_key(path)
         if not seen[key] then
           seen[key] = true
-          add({ title = display(M.name(key)), subtitle = display(path), icon = "folder" }, {
+          paths[#paths + 1] = key
+          add({ subtitle = display(path), icon = "folder" }, {
             path = path,
           })
         end
       end
     end
+  end
+  for i, name in ipairs(names(paths)) do
+    items[session_count + i].title = display(name)
   end
 
   local choice, why, detail = rex.ui.pick({
