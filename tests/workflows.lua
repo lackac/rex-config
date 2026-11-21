@@ -11,6 +11,8 @@ local real_getenv = os.getenv
 os.getenv = function(key)
   if key == "HOME" then
     return home
+  elseif key == "XDG_CACHE_HOME" then
+    return "/cache/fictional"
   elseif key == "XDG_STATE_HOME" then
     return state_home
   end
@@ -37,6 +39,8 @@ rex = {
     local stdout = ""
     if argv[1] == "/usr/bin/mktemp" then
       stdout = argv[2]:gsub("XXXXXX$", "mock") .. "\n"
+    elseif argv[1] == "/tools/test" and argv[2] == "-S" then
+      return { ok = argv[3]:match("/42%.sock$") ~= nil }
     elseif argv[1] == "/tools/zsh" and argv[3] == "-c" and argv[4]:find("pwd %-P") then
       local path = argv[6]
       if path == "/missing" then
@@ -82,6 +86,7 @@ rex = {
 local common = require("common")
 local projects = require("projects")
 require("popups").setup()
+require("editor").setup()
 projects.setup()
 equal(#calls, 0)
 equal(#commands, 0)
@@ -90,6 +95,8 @@ for _, name in ipairs({
   "project_open_opencode",
   "project_picker",
   "popup_lazygit",
+  "split_editor",
+  "transcript_editor",
 }) do
   assert(actions[name], "Missing " .. name)
 end
@@ -169,6 +176,48 @@ equal(
   layer
 )
 equal(#calls - calls_before, 3) -- Read the origin and cwd, then create the layer.
+
+-- Prefix v marks the side editor and gives it a socket tied to its PID.
+window.layers[1].kind = "tiled"
+handlers["session.new_split"] = function(args)
+  equal(args.anchor_id, origin.block_id)
+  equal(args.side, "before")
+  equal(args.ratio, 0.62)
+  equal(args.layout.block.label, "Neovim side editor")
+  equal(args.layout.block.options.command[3], 'exec nvim --listen "$1/$$.sock"')
+  equal(args.layout.block.options.command[5], "/cache/fictional/rex-editor")
+  return {}
+end
+actions.split_editor.run(origin)
+
+local editor = window.layers[1].blocks[2]
+editor.label = "Neovim side editor"
+handlers[common.creator .. ".process"] = function(args)
+  return {
+    foreground = { cwd = "/origin dir", pid = args.block_id == editor.block_id and 42 or 123 },
+  }
+end
+local target = { file = "/work/a 'file'.md", directory = "/work", line = 4, column = 2 }
+local reuse = actions.transcript_editor.run(origin, target)
+equal(reuse.pane, editor.block_id)
+equal(reuse.socket, "/cache/fictional/rex-editor/42.sock")
+
+-- A side editor in another tab doesn't stop a popup in the origin tab.
+handlers["session.new_layer"] = function(args)
+  equal(args.window_id, explicit.window_id)
+  equal(table.concat(args.bounds, ","), "0.1,0.1,0.8,0.8")
+  local options = args.layout.block.options
+  equal(options.cwd, "/work")
+  equal(
+    table.concat(options.command, "\n"),
+    "/tools/zsh\n-lic\nexec nvim \"$@\"\nrex-editor\n+call cursor(4,2)\n--\n/work/a 'file'.md"
+  )
+  return layer
+end
+equal(actions.transcript_editor.run(explicit, target).floating, true)
+fails(function()
+  actions.transcript_editor.run(origin, { directory = "/work", file = "unresolved.md" })
+end, "Expected an absolute local path")
 
 -- A manual session at the requested cwd cannot replace a stale saved ID.
 local sessions = {

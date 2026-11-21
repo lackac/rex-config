@@ -21,13 +21,6 @@ end
 
 function M.setup()
   rex.action({
-    name = "split_editor",
-    title = "Editor beside pane",
-    run = function(ctx)
-      return command_split(common.origin(ctx), { "nvim" })
-    end,
-  })
-  rex.action({
     name = "split_lazygit",
     title = "Lazygit beside pane",
     run = function(ctx)

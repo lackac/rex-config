@@ -81,6 +81,10 @@ longer bound.
 Turn off Rex's **Autobalance splits** so the left split opened by Prefix `v` or
 `g` takes 62% of the width.
 
+Neovim splits opened with Prefix `v` can receive file links from OpenCode.
+Without an identifiable editor in the same tab, OpenCode opens the file in a
+floating Neovim pane instead.
+
 Option+arrows send Alt+B/F; Option+Backspace sends Ctrl+W. The configured
 Option-letter editing keys are forwarded as Alt rather than composed symbols.
 

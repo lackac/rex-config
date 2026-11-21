@@ -119,7 +119,7 @@ function M.origin(ctx)
             block_id = block_id,
           }
           origin.cwd = M.cwd(origin)
-          return origin
+          return origin, window
         end
       end
     end
