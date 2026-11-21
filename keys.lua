@@ -61,7 +61,7 @@ function M.setup()
     g = { "split_lazygit" },
     v = { "split_editor" },
     m = { "split_man" },
-    ["shift+x"] = { "session_close" },
+    ["shift+x"] = { "session.close", cmd = "ctrl+w" },
     ["shift+\\"] = { "pane.split", { direction = "right" } },
     ["-"] = { "pane.split", { direction = "down" } },
     z = { "pane.zoom" },

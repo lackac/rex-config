@@ -68,7 +68,7 @@ picker. Rex's native session picker moves to **Cmd+Shift+K**.
 | Prefix Shift+H/J/K/L | | Resize pane |
 | Prefix `r`, then Shift+H/J/K/L | | Repeated resizing; Enter or Escape exits |
 | Prefix `z` / `x` | | Zoom / close pane |
-| Prefix Shift+X | | Confirm closing the entire session |
+| Prefix Shift+X | Ctrl+Cmd+W | File → Close Session |
 | Prefix `[` | | Native vi-style copy mode |
 | Prefix Ctrl+C / Ctrl+V | | Copy current selection / paste clipboard |
 | Prefix Tab | | Show hints over the focused pane's live screen |
@@ -185,9 +185,9 @@ rex -C APP_ID do ./tests/client-regressions.lua \
   client=APP_ID return_session=SESSION_ID
 ```
 
-Session closing always asks for confirmation: foreground-process information
-alone cannot prove that background jobs are safe to terminate. Picker filtering
-uses a snapshot; reopen it to refresh. Kill-in-picker is deliberately absent.
+Both session-close shortcuts use Rex's native close logic and can stop all
+programs in the session. Picker filtering uses a snapshot; reopen it to refresh.
+Kill-in-picker is deliberately absent.
 Resize amounts are Rex percentages, not tmux cell counts.
 
 In preview.21/22, Rex's macOS `login` launch path ignores a Lua layout's command
