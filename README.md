@@ -44,34 +44,36 @@ macOS socket. Use `-S` to choose another server explicitly.
 
 ## Keys
 
-`Prefix` means **Ctrl+A**, then the next key. **Cmd+K** keeps Rex's native
-session picker. Native Cmd-based Rex shortcuts remain available.
+`Prefix` means **Ctrl+A**, then the next key. **Cmd+K** now opens the project
+picker. Rex's native session picker moves to **Cmd+Shift+K**.
 
-| Key | Action |
-| --- | --- |
-| Ctrl+arrows or Ctrl+H/J/K/L | Smart navigation between Rex panes and Neovim splits |
-| Prefix Ctrl+A | Send Ctrl+A to the terminal |
-| Prefix `;` or `k` | Project picker |
-| Prefix Ctrl+E | Toggle recent session |
-| Prefix Ctrl+S | Toggle recent tab within the session |
-| Prefix `1`–`9` | Select tab by number |
-| Prefix `n` / `p` | Next / previous tab |
-| Prefix `c` / `,` | Rex's native New Tab / Rename Tab |
-| Prefix `'` | Rex's native Go to Anything picker |
-| Prefix `f` / `l` | Rex's native floating pane / floating lazygit |
-| Prefix `v` / `g` | Neovim / lazygit in a left split |
-| Prefix `m` | Browse manual page names and sections with fzf in a focused right-side 50/50 split |
-| Prefix `\|` / `-` | Split right / below |
-| Prefix arrows | Focus pane |
-| Prefix Shift+H/J/K/L | Resize pane |
-| Prefix `r`, then Shift+H/J/K/L | Repeated resizing; Enter or Escape exits |
-| Prefix `z` / `x` | Zoom / close pane |
-| Prefix Shift+X | Confirm closing the entire session |
-| Prefix `[` | Native vi-style copy mode |
-| Prefix Ctrl+C / Ctrl+V | Copy current selection / paste clipboard |
-| Prefix Tab | Show hints over the focused pane's live screen |
-| Prefix `u` | Find web URLs in the focused pane's scrollback with fzf |
-| Cmd+F5 | Reload Lua configuration |
+| Ctrl or Prefix shortcut | Cmd shortcut | Action |
+| --- | --- | --- |
+| Ctrl+arrows or Ctrl+H/J/K/L | | Smart navigation between Rex panes and Neovim splits |
+| Prefix Ctrl+A | | Send Ctrl+A to the terminal |
+| Prefix `;` or `k` | Cmd+K | Project picker |
+| | Cmd+Shift+K | Rex's native session picker |
+| Prefix Ctrl+E | Cmd+E | Toggle recent session |
+| Prefix Ctrl+S | | Toggle recent tab within the session |
+| Prefix `1`–`9` | | Select tab by number |
+| Prefix `n` / `p` | | Next / previous tab |
+| Prefix `c` / `,` | | Rex's native New Tab / Rename Tab |
+| Prefix `'` | | Rex's native Go to Anything picker |
+| Prefix `f` | Cmd+Shift+F | Rex's native floating pane |
+| Prefix `l` | Cmd+L | Floating lazygit |
+| Prefix `v` / `g` | | Neovim / lazygit in a left split |
+| Prefix `m` | | Browse manual page names and sections with fzf in a focused right-side 50/50 split |
+| Prefix `\|` / `-` | | Split right / below |
+| Prefix arrows | | Focus pane |
+| Prefix Shift+H/J/K/L | | Resize pane |
+| Prefix `r`, then Shift+H/J/K/L | | Repeated resizing; Enter or Escape exits |
+| Prefix `z` / `x` | | Zoom / close pane |
+| Prefix Shift+X | | Confirm closing the entire session |
+| Prefix `[` | | Native vi-style copy mode |
+| Prefix Ctrl+C / Ctrl+V | | Copy current selection / paste clipboard |
+| Prefix Tab | | Show hints over the focused pane's live screen |
+| Prefix `u` | Cmd+U | Find web URLs in the focused pane's scrollback with fzf |
+| | Cmd+F5 | Reload Lua configuration |
 
 Recent-session switching lets Rex choose the destination tab. Prefix `s` is no
 longer bound.

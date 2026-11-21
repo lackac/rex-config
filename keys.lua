@@ -50,14 +50,14 @@ function M.setup()
   local bindings = {
     ["ctrl+a"] = { "pane.send_key", { key = "ctrl+a" } },
     [";"] = { "project_picker" },
-    k = { "project_picker" },
-    ["ctrl+e"] = { "session.recent" },
+    k = { "project_picker", cmd = "k" },
+    ["ctrl+e"] = { "session.recent", cmd = "e" },
     ["ctrl+s"] = { "client.tab.recent.in_session" },
     c = { "client.tab.new" },
     [","] = { "client.tab.rename" },
     ["'"] = { "pane.go_to" },
-    f = { "pane.new_floating" },
-    l = { "popup_lazygit" },
+    f = { "pane.new_floating", cmd = "shift+f" },
+    l = { "popup_lazygit", cmd = "l" },
     g = { "split_lazygit" },
     v = { "split_editor" },
     m = { "split_man" },
@@ -70,7 +70,7 @@ function M.setup()
     ["ctrl+c"] = { "pane.copy" },
     ["ctrl+v"] = { "pane.paste" },
     tab = { "hints" },
-    u = { "fzf_url" },
+    u = { "fzf_url", cmd = "u" },
     n = { "client.tab.next" },
     p = { "client.tab.previous" },
     ["ctrl+alt+h"] = { "client.tab.previous" },
@@ -80,6 +80,9 @@ function M.setup()
   }
   for key, binding in pairs(bindings) do
     rex.bind("ctrl+a>" .. key, binding[1], binding[2])
+    if binding.cmd then
+      rex.bind("cmd+" .. binding.cmd, binding[1], binding[2])
+    end
   end
   for index = 1, 9 do
     rex.bind("ctrl+a>" .. index, "client.tab.goto", { index = index })
@@ -106,6 +109,7 @@ function M.setup()
     rex.bind("repeat/shift+" .. key, "pane.resize", { direction = direction, amount = 5 })
   end
 
+  rex.bind("cmd+shift+k", "session.switch")
   rex.bind("cmd+f5", "client.config.reload")
   rex.bind("alt+left", "pane.send_key", { key = "alt+b" })
   rex.bind("alt+right", "pane.send_key", { key = "alt+f" })
