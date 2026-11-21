@@ -120,8 +120,24 @@ bindings and foreground-Neovim routing live here. `TMUX` takes precedence when
 Neovim is deliberately nested inside tmux.
 
 Hammerspoon prefers Rex in terminal cycling and layouts, and recognizes Rex
-titles in browser-profile routing. Existing OpenCode session links still open
-Ghostty/tmux: their RPC currently requires tmux pane IDs.
+titles in browser-profile routing. For an approved OpenCode link, the Rex
+action `project_open_opencode` takes three required strings: `path` (project
+root), `directory` (an existing directory at or below that root), and
+`conversation` (the `ses_` ID). For example:
+
+```sh
+rex do project_open_opencode path="$project_root" directory="$location" \
+  conversation="$session_id" --json
+```
+
+The result contains Rex `session_id`, `window_id`, and `block_id` strings and
+a `started` boolean. `true` means Rex launched OpenCode in a new tab; `false`
+means it found a foreground OpenCode TUI in the matching directory in that
+managed project. `started` does not indicate RPC readiness. In either case,
+the caller sends the OpenCode session-link RPC to `block_id` and waits for a
+matching acknowledgement. Rex does not pass the conversation ID to the
+process, select an app session, or focus an existing pane. A link can add a
+tab to `main` without changing the plain home project's shell-only default.
 
 ## Checks and limits
 
@@ -167,7 +183,7 @@ In preview.21/22, Rex's macOS `login` launch path ignores a Lua layout's command
 and cwd. `common.layout` uses `login = false` and starts zsh explicitly to keep
 the requested working directory and login-shell initialization.
 
-Neovim's custom OpenCode pane controls and OpenCode session-link RPC remain
-tmux-specific. App relaunch, updater relaunch, server restart, and sleep/wake
-persistence still need a hands-on trial with disposable workloads. Restored
-layouts do not prove that the original programs survived.
+Neovim's custom OpenCode pane controls remain tmux-specific. App relaunch,
+updater relaunch, server restart, and sleep/wake persistence still need a
+hands-on trial with disposable workloads. Restored layouts do not prove
+that the original programs survived.

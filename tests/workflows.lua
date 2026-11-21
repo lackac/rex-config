@@ -5,6 +5,7 @@ package.path = "./?.lua;" .. package.path
 local actions, calls, commands, queued, json = {}, {}, {}, {}, {}
 local handlers = {}
 local logs, zoxide = {}, nil
+local canonical_aliases = { ["/links/alias"] = "/linked/project" }
 local function equal(actual, expected)
   assert(actual == expected, tostring(actual) .. " ~= " .. tostring(expected))
 end
@@ -27,7 +28,11 @@ rex = {
     if argv[1] == "/usr/bin/mktemp" then
       stdout = argv[2]:gsub("XXXXXX$", "mock") .. "\n"
     elseif argv[1] == "/tools/zsh" and argv[3] == "-c" and argv[4]:find("pwd %-P") then
-      stdout = argv[6]:gsub("/alias$", "/project") .. "\n"
+      local path = argv[6]
+      if path == "/missing" then
+        return { ok = false, stderr = "Directory not found" }
+      end
+      stdout = (canonical_aliases[path] or path:gsub("/alias$", "/project")) .. "\n"
     elseif argv[1] == "/tools/zoxide" then
       return zoxide
     end
@@ -71,6 +76,7 @@ equal(#calls, 0)
 equal(#commands, 0)
 for _, name in ipairs({
   "project_open",
+  "project_open_opencode",
   "project_picker",
   "popup_lazygit",
   "session_close",
@@ -206,6 +212,10 @@ calls_before = #calls
 local opened = projects.open({ client_id = "client:origin" }, "/new/alias")
 equal(opened.session_id, "session:created")
 equal(#calls, calls_before + 4)
+equal(opened.path, "/new/project")
+equal(opened.started, nil)
+equal(opened.window_id, nil)
+equal(opened.block_id, nil)
 equal(calls[calls_before + 1].method, "session.list")
 equal(calls[calls_before + 2].method, "session.create")
 equal(calls[calls_before + 3].method, "session.attach")
@@ -362,5 +372,157 @@ rex.ui.pick = function()
 end
 actions.session_close.run({ session_id = origin.session_id })
 equal(destroys, 1)
+
+-- OpenCode links have a separate return contract and leave focus to the caller.
+local link = actions.project_open_opencode
+equal(table.concat(link.args.required, ","), "path,directory,conversation")
+for _, arg in ipairs({ "path", "directory", "conversation" }) do
+  equal(link.args.properties[arg].type, "string")
+end
+equal(link.args.properties.conversation.pattern, "^ses_[A-Za-z0-9]+$")
+local directory = "/linked/project/a 'quoted'; directory"
+canonical_aliases["/links/location"] = directory
+local function open_link(path, location, conversation)
+  return link.run(
+    { client_id = "client:cli", session_id = "session:manual" },
+    { path = path, directory = location, conversation = conversation or "ses_aB12" }
+  )
+end
+local function check_target(target, window_id, block_id, started)
+  equal(target.session_id, "session:linked")
+  equal(target.window_id, window_id)
+  equal(target.block_id, block_id)
+  equal(target.started, started)
+  equal(target.path, nil)
+end
+local function check_launch(tab, cwd)
+  equal(tab.window_label, "OpenCode")
+  local options = tab.layout.block.options
+  equal(options.cwd, cwd)
+  equal(options.login, false)
+  equal(options.shell, "none")
+  equal(options.command[1], "/tools/zsh")
+  equal(options.command[5], "/tools/direnv")
+  equal(#options.command, 6)
+  assert(not table.concat(options.command, "\n"):find("ses_aB12", 1, true))
+end
+calls_before = #calls
+for _, invalid in ipairs({ "ses_", "ses_x-y", "ses_x\n", "ses_x; date" }) do
+  fails(function()
+    open_link("/links/alias", "/links/location", invalid)
+  end, "Invalid OpenCode conversation ID")
+end
+for _, outside in ipairs({ "/linked", "/linked/project-other" }) do
+  fails(function()
+    open_link("/links/alias", outside)
+  end, "inside the project")
+end
+fails(function()
+  open_link("/links/alias", "/missing")
+end, "Directory not found")
+fails(function()
+  open_link("linked/project", "/links/location")
+end, "must be absolute")
+fails(function()
+  open_link("/links/alias", nil)
+end, "Missing OpenCode directory")
+fails(function()
+  open_link(nil, "/links/location")
+end, "Invalid path")
+equal(#calls, calls_before)
+
+sessions = { { session_id = "session:manual", label = "project" } }
+handlers["session.list"] = function()
+  return { sessions = sessions }
+end
+local expected_root, expected_directory = "/linked/project", directory
+handlers["session.create"] = function(args)
+  equal(#args.initial_windows, 2)
+  check_launch(args.initial_windows[1], expected_directory)
+  equal(args.initial_windows[2].window_label, "Shell")
+  equal(args.initial_windows[2].layout.block.options.cwd, expected_root)
+  equal(args.initial_windows[2].layout.block.options.command[2], "-il")
+  sessions[#sessions + 1] = { session_id = "session:linked", label = args.label }
+  return {
+    session_id = "session:linked",
+    initial_windows = { { window_id = "window:first", block_ids = { "block:first" } } },
+  }
+end
+queued_before = #queued
+check_target(open_link("/links/alias", "/links/location"), "window:first", "block:first", true)
+equal(#calls, calls_before + 2)
+equal(#queued, queued_before)
+equal(rex.json.decode(memory[state])["/linked/project"], "session:linked")
+equal(sessions[2].label, "project — /linked/project")
+
+local processes = {
+  alternate = { foreground = { argv0 = "/bin/opencode", cwd = "/links/location" } },
+  background = { child = { argv0 = "opencode", cwd = directory }, foreground = { name = "zsh" } },
+  unrelated = { foreground = { argv0 = "opencode-helper", cwd = directory } },
+  different = { foreground = { argv0 = "/bin/opencode", cwd = "/linked/project" } },
+  missing = { foreground = { argv0 = "opencode", cwd = "/missing" } },
+  wrapped = { foreground = { name = ".opencode2-wrapped", cwd = directory } },
+}
+local panes = {
+  { block_id = "not-terminal", creator_name = "example", host_id = "host:local" },
+  { block_id = "not-local", creator_name = common.creator, host_id = "host:remote" },
+}
+for _, key in ipairs({
+  "background",
+  "unrelated",
+  "different",
+  "missing",
+  "vanished",
+  "alternate",
+  "wrapped",
+}) do
+  local pane = block(key)
+  pane.host_id = "host:local"
+  panes[#panes + 1] = pane
+end
+handlers["server.status"] = function()
+  return { host_id = "host:local" }
+end
+handlers["session.attach"] = function(args)
+  equal(args.session_id, "session:linked")
+  return {
+    view = { windows = { { window_id = "window:existing", layers = { { blocks = panes } } } } },
+  }
+end
+handlers[common.creator .. ".process"] = function(args)
+  equal(args.session_id, "session:linked")
+  assert(args.block_id ~= "not-terminal" and args.block_id ~= "not-local")
+  return processes[args.block_id]
+end
+local screen = { alternate = "primary", wrapped = "alternate" }
+handlers[common.creator .. ".modes"] = function(args)
+  equal(args.session_id, "session:linked")
+  return { screen = assert(screen[args.block_id]) }
+end
+handlers["session.focus_window"] = nil
+check_target(open_link("/links/alias", directory), "window:existing", "wrapped", false)
+screen.alternate = "alternate"
+check_target(open_link("/links/alias", directory), "window:existing", "alternate", false)
+screen.alternate, screen.wrapped = "primary", "primary"
+handlers["session.new_window"] = function(args)
+  equal(args.session_id, "session:linked")
+  equal(args.focus, false)
+  check_launch(args, directory)
+  fails(function()
+    projects.open({}, "/linked/project")
+  end, "already opening")
+  return { window_id = "window:new", block_ids = { "block:new" } }
+end
+check_target(open_link("/links/alias", directory), "window:new", "block:new", true)
+equal(#queued, queued_before)
+
+sessions = {}
+expected_root, expected_directory = os.getenv("HOME"), os.getenv("HOME")
+check_target(open_link(expected_root, expected_directory), "window:first", "block:first", true)
+equal(sessions[1].label, "main")
+sessions = {}
+expected_root, expected_directory = "/", directory
+check_target(open_link("/", directory), "window:first", "block:first", true)
+equal(#queued, queued_before)
 os.rename = real_rename
 print("Workflow tests passed")
