@@ -115,6 +115,16 @@ for _, name in ipairs({
   assert(actions[name], "Missing " .. name)
 end
 
+local open_project = actions.project_open.run
+equal(actions.project_open.args.path, "string")
+for _, args in ipairs({ {}, { path = "" } }) do
+  fails(function()
+    open_project({}, args)
+  end, "Project path is required")
+end
+equal(#calls, 0)
+equal(#commands, 0)
+
 common.tool = function(name)
   return "/tools/" .. name
 end
@@ -321,8 +331,8 @@ calls_before = #calls
 naming = { ok = true, stdout = "🪐 Moon Library\n" }
 local commands_before = #commands
 local opened = projects.open({ client_id = "client:origin" }, "/new/alias")
-equal(#commands, commands_before + 5) -- Resolve the path and home, name, mkdir, mktemp.
-check_naming(commands[commands_before + 3], "/new/project\tproject\n")
+equal(#commands, commands_before + 4) -- Resolve the path, name, mkdir, mktemp.
+check_naming(commands[commands_before + 2], "/new/project\tproject\n")
 equal(opened.session_id, "session:created")
 equal(#calls, calls_before + 4)
 equal(opened.path, "/new/project")
@@ -353,16 +363,6 @@ local queued_before = #queued
 projects.open({ client_id = "client:cli" }, "/new/project")
 equal(#queued, queued_before + 1)
 equal(queued[#queued].args.session_id, "session:created")
-handlers["session.list"] = function()
-  return { sessions = {} }
-end
-handlers["session.create"] = function(args)
-  equal(#args.initial_windows, 1)
-  equal(args.label, "main")
-  return { session_id = "session:main", initial_windows = { { window_id = "window:opencode" } } }
-end
-naming = nil
-projects.open({}, home)
 
 -- The picker batches directory labels and canonicalizes only on selection.
 local default_pick = rex.ui.pick
@@ -386,8 +386,8 @@ local picker_input = "/z/story 'draft'; $(false)\tstory 'draft'; $(false)\n"
   .. "/new/alias\talias\n"
   .. "/a/cloud-castle\tcloud-castle\n"
   .. home
-  .. "\tmain\n"
-naming = { ok = true, stdout = "📚 Story Draft\nMoon Library\n☁ Cloud Castle\nmain\n" }
+  .. "\tfictional\n"
+naming = { ok = true, stdout = "📚 Story Draft\nMoon Library\n☁ Cloud Castle\nHome Label\n" }
 local function check_picker(opts, fallback)
   equal(#opts.items, 6)
   equal(opts.items[1].title, "renamed project")
@@ -401,7 +401,8 @@ local function check_picker(opts, fallback)
   equal(opts.items[4].title, fallback and "alias" or "Moon Library")
   equal(opts.items[5].subtitle, "/a//./cloud-castle")
   equal(opts.items[5].title, fallback and "cloud-castle" or "☁ Cloud Castle")
-  equal(opts.items[6].title, "main")
+  equal(opts.items[6].subtitle, home)
+  equal(opts.items[6].title, fallback and "fictional" or "Home Label")
 end
 rex.ui.pick = function(opts)
   check_picker(opts)
@@ -509,6 +510,32 @@ equal(pick_project({}), nil)
 equal(#commands, commands_before + 2)
 local _, records = commands[#commands].opts.stdin:gsub("\n", "")
 equal(records, 1998)
+
+-- Home is an ordinary zoxide project, and explicit ~ reuses its saved ID.
+zoxide = { ok = true, stdout = home .. "\n" }
+rex.ui.pick = function(opts)
+  equal(opts.items[3].title, "fictional")
+  equal(opts.items[3].subtitle, home)
+  return opts.items[3].id
+end
+handlers["session.create"] = function(args)
+  equal(args.label, "fictional")
+  equal(#args.initial_windows, 2)
+  for index, name in ipairs({ "OpenCode", "Shell" }) do
+    equal(args.initial_windows[index].window_label, name)
+    equal(args.initial_windows[index].layout.block.options.cwd, home)
+  end
+  return { session_id = "session:home", initial_windows = { { window_id = "window:opencode" } } }
+end
+equal(pick_project(picker_ctx).path, home)
+local home_writes = writes
+handlers["session.list"] = function()
+  return { sessions = { { session_id = "session:home", label = "main" } } }
+end
+calls_before = #calls
+equal(open_project({}, { path = "~" }).session_id, "session:home")
+equal(#calls, calls_before + 1) -- No relabeling or layout changes for an existing session.
+equal(writes, home_writes)
 rex.ui.pick = default_pick
 
 -- OpenCode links have a separate return contract and leave focus to the caller.
@@ -659,8 +686,8 @@ equal(#queued, queued_before)
 
 sessions = {}
 expected_root, expected_directory = home, home
-check_target(open_link(expected_root, expected_directory), "window:first", "block:first", true)
-equal(sessions[1].label, "main")
+check_target(open_link("~", expected_directory), "window:first", "block:first", true)
+equal(sessions[1].label, "fictional")
 sessions = {}
 expected_root, expected_directory = "/", directory
 check_target(open_link("/", directory), "window:first", "block:first", true)

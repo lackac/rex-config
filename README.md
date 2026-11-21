@@ -94,12 +94,11 @@ The project picker lists live Rex sessions first, followed by zoxide directories
 Type to filter by name or path using Rex's native filter. Select manual sessions
 directly by their label, even when they share a directory with a project.
 
-A new project session starts with OpenCode and Shell tabs, or only a Shell tab
-for the home directory. Opening a directory reuses its saved session if it is
-still live, even after a rename or a working directory change. Otherwise it
-creates a project session, regardless of where manual sessions are running.
-Rex stores these associations by canonical path in
-`~/.local/state/rex/projects.json`. Explicit opening is also available:
+A new project session starts with OpenCode and Shell tabs. Opening a directory
+reuses its saved session if it is still live, even after a rename or a working
+directory change. Otherwise it creates a project session, regardless of where
+manual sessions are running. Rex stores these associations by canonical path in
+`~/.local/state/rex/projects.json`. The `project_open` action requires a path:
 
 ```sh
 rex do project_open path="$HOME/Code/example-project"
@@ -108,9 +107,10 @@ rex do project_open path="$HOME/Code/example-project"
 Home Manager installs `terminal-session-name` for picker directories and new
 sessions. The helper shares tmux's private, untracked rules at
 `${XDG_CONFIG_HOME:-$HOME/.config}/session-name-rules.csv`. If the helper is
-unavailable or gives no valid reply, Rex uses the directory basename (`main` for
-home). Existing session labels stay as they are. Open home with
-`rex do project_open path="$HOME"`.
+unavailable or gives no valid reply, Rex uses the directory basename. Home is an
+ordinary project directory; open it with `rex do project_open path='~'` or select
+it if zoxide lists it. Existing sessions and saved associations stay as they are,
+and Rex's native startup is unchanged.
 
 Prefix Tab labels paths, URLs, hashes, UUIDs, and IPv4 addresses on the focused
 pane's live screen. Type a hint, then press Enter or `c` to copy the match. Hints
@@ -151,8 +151,7 @@ means it found a foreground OpenCode TUI in the matching directory in that
 managed project. `started` does not indicate RPC readiness. In either case,
 the caller sends the OpenCode session-link RPC to `block_id` and waits for a
 matching acknowledgement. Rex does not pass the conversation ID to the
-process, select an app session, or focus an existing pane. A link can add a
-tab to the home session without changing its shell-only default.
+process, select an app session, or focus an existing pane.
 
 ## Checks and limits
 
@@ -179,7 +178,7 @@ to a Rex neighbor and generic navigation back. Start the private server with
 `REX_SERVER` set to its test socket, just as the Mac app sets it for its server.
 
 `tests/client-regressions.lua` checks visible app selection, numeric tabs,
-recent-tab/session toggles, existing and new projects, and `main`. It requires
+recent-tab/session toggles, and opening new and existing projects. It requires
 Hammerspoon IPC for read-only window-title checks, briefly changes the app's
 view, and starts a disposable OpenCode session. Pass the app's full client ID
 and a session to return to; only sessions created by the check are closed:

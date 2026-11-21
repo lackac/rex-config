@@ -55,11 +55,10 @@ local function remember(path, id)
   end
 end
 
-local function names(paths, home)
+local function names(paths)
   local defaults, records = {}, {}
-  home = home or os.getenv("HOME")
   for i, path in ipairs(paths) do
-    local name = path == home and "main" or path:match("([^/]+)$") or path
+    local name = path:match("([^/]+)$") or path
     defaults[i] = name
     if path:sub(1, 1) == "/" and not path:find("[%z\r\n\t]") then
       records[#records + 1] = path .. "\t" .. name .. "\n"
@@ -213,7 +212,8 @@ function M.open(ctx, path, directory)
       "OpenCode directory must be inside the project"
     )
   else
-    path = common.canonical(path or assert(os.getenv("HOME")))
+    assert(type(path) == "string" and path ~= "", "Project path is required (pass path=...)")
+    path = common.canonical(path)
   end
   assert(not opening[path], "This project is already opening; try again shortly")
   opening[path] = true
@@ -222,17 +222,11 @@ function M.open(ctx, path, directory)
     local id = live_id(registry()[path], sessions)
     local window
     if not id then
-      local home = assert(os.getenv("HOME"))
-      local shell_only = not directory and path == common.canonical(home)
-      local name = session_label(names({ path }, shell_only and path or home)[1], path, sessions)
-      local shell = { window_label = "Shell", layout = common.layout(path) }
-      local windows = { shell }
-      if not shell_only then
-        windows = {
-          { window_label = "OpenCode", layout = opencode_layout(directory or path) },
-          shell,
-        }
-      end
+      local name = session_label(names({ path })[1], path, sessions)
+      local windows = {
+        { window_label = "OpenCode", layout = opencode_layout(directory or path) },
+        { window_label = "Shell", layout = common.layout(path) },
+      }
       local created = common.call("session.create", { label = name, initial_windows = windows })
       id = assert(created.session_id)
       remember(path, id)
@@ -366,7 +360,7 @@ function M.setup()
   rex.action({
     name = "project_open",
     title = "Open project",
-    args = { path = "string?" },
+    args = { path = "string" },
     run = function(ctx, args)
       return M.open(ctx, args.path)
     end,

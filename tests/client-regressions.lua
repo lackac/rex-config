@@ -143,25 +143,6 @@ local ok, err = pcall(function()
     assert(opened.session_id == project_id, "Existing test project was not reused")
     selected(project, "OpenCode")
   end)
-  check("main selects the home-directory session", function()
-    reset()
-    local before = {}
-    for _, session in ipairs(common.call("session.list").sessions) do
-      before[session.session_id] = true
-    end
-    local opened = assert(rex.json.decode(cli("do", "project_open", "path=" .. os.getenv("HOME"))))
-    if not before[opened.session_id] then
-      made[#made + 1] = opened.session_id
-    end
-    local home = view(opened)
-    for _, window in ipairs(home.windows) do
-      if window.window_id == home.active_window_id then
-        selected(home, false)
-        return
-      end
-    end
-    error("Home session has no active tab")
-  end)
   if rex.args.history == false then
     print("SKIP native recent tab/session toggles (history=false)")
   else
