@@ -151,26 +151,23 @@ equal(
 )
 equal(#calls - calls_before, 3) -- Read the origin and cwd, then create the layer.
 
--- Registry identity survives session renames, does not depend on a basename,
--- and does not let a managed project's changed cwd claim a different project.
+-- A manual session at the requested cwd cannot replace a stale saved ID.
 local sessions = {
-  { session_id = "session:full-a", label = "renamed" },
+  { session_id = "session:full-a", label = "manual project" },
   { session_id = "session:full-b", label = "project" },
 }
-equal(
-  projects.existing("/a/project", sessions, { ["/a/project"] = "session:full-a" }),
-  "session:full-a"
-)
-equal(
-  projects.existing("/origin dir", sessions, {
-    ["/a/project"] = "session:full-a",
-    ["/b/project"] = "session:full-b",
+handlers[common.creator .. ".process"] = function(args)
+  equal(args.session_id, "session:full-a")
+  return { foreground = { cwd = "/new/project" } }
+end
+local state = (os.getenv("XDG_STATE_HOME") or os.getenv("HOME") .. "/.local/state")
+  .. "/rex/projects.json"
+local memory = {
+  [state] = rex.json.encode({
+    ["/new/project"] = "session:stale",
+    ["/other/project"] = "session:full-b",
   }),
-  nil
-)
-equal(projects.existing("/origin dir", sessions, {}), "session:full-a")
-
-local memory = {}
+}
 local real_rename = os.rename
 os.rename = function(from, to)
   memory[to] = memory[from]
@@ -189,6 +186,7 @@ handlers["session.list"] = function()
 end
 handlers["session.create"] = function(args)
   creates = creates + 1
+  equal(args.label, "project — /new/project")
   equal(#args.initial_windows, 2)
   equal(args.initial_windows[1].layout.block.options.cwd, "/new/project")
   local command = args.initial_windows[1].layout.block.options.command
@@ -204,9 +202,22 @@ handlers["session.focus_window"] = function(args)
   equal(args.window_id, "window:opencode")
   return {}
 end
+calls_before = #calls
 local opened = projects.open({ client_id = "client:origin" }, "/new/alias")
 equal(opened.session_id, "session:created")
+equal(#calls, calls_before + 4)
+equal(calls[calls_before + 1].method, "session.list")
+equal(calls[calls_before + 2].method, "session.create")
+equal(calls[calls_before + 3].method, "session.attach")
+equal(calls[calls_before + 3].args.session_id, opened.session_id)
+equal(calls[calls_before + 4].method, "session.focus_window")
+local saved = rex.json.decode(memory[state])
+equal(saved["/new/project"], "session:created")
+equal(saved["/other/project"], "session:full-b")
+calls_before = #calls
 equal(projects.open({}, "/new/project").session_id, "session:created")
+equal(#calls, calls_before + 1)
+equal(calls[#calls].method, "session.list")
 equal(creates, 1)
 equal(queued[#queued].args.session_id, "session:created")
 local queued_before = #queued
@@ -245,7 +256,7 @@ local function check_picker(opts)
   equal(opts.items[1].title, "renamed project")
   equal(opts.items[1].subtitle, "/new/project")
   equal(opts.items[1].detail, "Session")
-  equal(opts.items[2].title, "renamed")
+  equal(opts.items[2].title, "manual project")
   equal(opts.items[2].subtitle, nil)
   equal(opts.items[3].subtitle, "/z/another project")
   equal(opts.items[4].subtitle, "/new/alias")
@@ -256,7 +267,8 @@ rex.ui.pick = function(opts)
   check_picker(opts)
   return opts.items[1].id
 end
-local commands_before, calls_before = #commands, #calls
+local commands_before = #commands
+calls_before = #calls
 local picker_ctx = { client_id = "client:origin" }
 equal(pick_project(picker_ctx).session_id, "session:created")
 equal(queued[#queued].name, "session.select")
@@ -266,6 +278,16 @@ equal(calls[#calls].method, "session.list")
 equal(#commands, commands_before + 1)
 equal(table.concat(commands[#commands].argv, " "), "/tools/zoxide query --list")
 equal(commands[#commands].opts.cwd, nil)
+
+rex.ui.pick = function(opts)
+  check_picker(opts)
+  return opts.items[2].id
+end
+calls_before = #calls
+equal(pick_project(picker_ctx).session_id, "session:full-a")
+equal(queued[#queued].args.session_id, "session:full-a")
+equal(#calls, calls_before + 1)
+equal(calls[#calls].method, "session.list")
 
 rex.ui.pick = function(opts)
   check_picker(opts)

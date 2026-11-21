@@ -5,11 +5,12 @@ local endpoint = common.call("server.status").listeners[1].endpoint
 assert(endpoint:match("^unix:///tmp/opencode/rex%-integration/"), "Use a private test server")
 local projects = require("projects")
 local created = {}
-local base = "/tmp/opencode/rex-integration/projects"
+local state = os.getenv("XDG_STATE_HOME")
 assert(
-  (os.getenv("XDG_STATE_HOME") or ""):match("^/tmp/opencode/rex%-integration/"),
+  state and state:match("^/tmp/opencode/rex%-integration/"),
   "Run with an isolated XDG_STATE_HOME"
 )
+local base = state .. "/projects"
 
 local ok, err = pcall(function()
   common.exec({ "/bin/mkdir", "-p", base .. "/one/same name", base .. "/two/same name" })
@@ -17,7 +18,25 @@ local ok, err = pcall(function()
   common.layout = function(cwd)
     return layout(cwd, { "/bin/cat" }, true)
   end
+  local same = common.canonical(base .. "/one/same name")
+  local manual = common.call("session.create", {
+    label = "Manual runtime test",
+    initial_windows = { { window_label = "Manual", layout = common.layout(same) } },
+  })
+  created[#created + 1] = manual.session_id
+  common.call("session.attach", { session_id = manual.session_id })
+  local pane = { session_id = manual.session_id, block_id = manual.initial_windows[1].block_ids[1] }
+  local cwd
+  for _ = 1, 30 do
+    cwd = common.cwd(pane, false)
+    if cwd == same then
+      break
+    end
+    rex.sleep(0.05)
+  end
+  assert(cwd == same, "Manual session must start in the project directory")
   local first = projects.open({}, base .. "/one/same name")
+  assert(first.session_id ~= manual.session_id, "Opening a project adopted a manual session")
   created[#created + 1] = first.session_id
   assert(projects.open({}, base .. "/one/./same name").session_id == first.session_id)
   common.call("session.attach", { session_id = first.session_id })
@@ -51,7 +70,7 @@ local ok, err = pcall(function()
     local file = assert(io.open(path, "r"), "Missing tool: " .. name)
     file:close()
   end
-  print("Rex runtime: canonical project reuse, renamed sessions, two tabs, cwd and tools passed")
+  print("Rex runtime: manual isolation, canonical and renamed reuse, tabs, cwd and tools passed")
 end)
 
 for _, id in ipairs(created) do

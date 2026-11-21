@@ -39,40 +39,13 @@ function M.name(path)
 end
 
 -- Durable path -> full session ID survives renames and changing terminal cwds.
--- Unmanaged sessions are reused only on an exact canonical cwd match.
-function M.existing(path, sessions, saved)
-  local by_id, managed = {}, {}
-  for _, session in ipairs(sessions) do
-    by_id[session.session_id] = true
-  end
-  for _, id in pairs(saved) do
-    managed[id] = true
-  end
-  if saved[path] and by_id[saved[path]] then
-    return saved[path]
+local function live_id(id, sessions)
+  if not id then
+    return
   end
   for _, session in ipairs(sessions) do
-    if not managed[session.session_id] then
-      local attached = common.call("session.attach", { session_id = session.session_id })
-      for _, window in ipairs(attached.view.windows or {}) do
-        for _, layer in ipairs(window.layers or {}) do
-          for _, block in ipairs(layer.blocks or {}) do
-            if block.creator_name == common.creator then
-              local ok, cwd = pcall(
-                common.cwd,
-                { session_id = session.session_id, block_id = block.block_id },
-                false
-              )
-              if ok and cwd then
-                local canonical_ok, canonical = pcall(common.canonical, cwd)
-                if canonical_ok and canonical == path then
-                  return session.session_id
-                end
-              end
-            end
-          end
-        end
-      end
+    if session.session_id == id then
+      return id
     end
   end
 end
@@ -83,7 +56,7 @@ function M.open(ctx, path)
   opening[path] = true
   local ok, result = pcall(function()
     local sessions = common.call("session.list").sessions or {}
-    local id = M.existing(path, sessions, registry())
+    local id = live_id(registry()[path], sessions)
     if not id then
       local name = M.name(path)
       for _, session in ipairs(sessions) do

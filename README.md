@@ -85,22 +85,22 @@ Option-letter editing keys are forwarded as Alt rather than composed symbols.
 ## Projects and text
 
 The project picker lists live Rex sessions first, followed by zoxide directories.
-Type to filter by name or path using Rex's native filter.
+Type to filter by name or path using Rex's native filter. Select manual sessions
+directly by their label, even when they share a directory with a project.
 
 A new project session starts with OpenCode and Shell tabs, or only a Shell tab
-for the home directory. Reopening a project uses its canonical path and saved
-full session ID, so renaming a session or changing a pane's cwd doesn't
-duplicate its running work. State lives at `~/.local/state/rex/projects.json`.
-Explicit opening is also available:
+for the home directory. Opening a directory reuses its saved session if it is
+still live, even after a rename or a working directory change. Otherwise it
+creates a project session, regardless of where manual sessions are running.
+Rex stores these associations by canonical path in
+`~/.local/state/rex/projects.json`. Explicit opening is also available:
 
 ```sh
 rex do project_open path="$HOME/Code/lackac/nix-config"
 ```
 
 `main` means the home directory. Select it if it appears in the picker, or open
-it explicitly with `rex do project_open path="$HOME"`. Opening that path can
-reuse an existing home-directory session with another name, such as
-`Onboarding`, without renaming it.
+it explicitly with `rex do project_open path="$HOME"`.
 
 Prefix Tab labels paths, URLs, hashes, UUIDs, and IPv4 addresses on the focused
 pane's live screen. Type a hint, then press Enter or `c` to copy the match. Hints
@@ -136,8 +136,9 @@ stylua --check .
 Without a standalone LuaJIT, use `nvim --headless -u NONE -l tests/workflows.lua`
 (and the same command for `tests/navigation.lua`).
 
-`tests/runtime.lua` checks project reuse across canonical paths and session
-renames, the two-tab layout, pane working directories, and configured tool paths.
+`tests/runtime.lua` checks that manual sessions stay separate, projects survive
+path aliases and session renames, and tabs, pane directories, and tool paths
+are set up correctly.
 Run it only against a private test server, with `XDG_STATE_HOME` under
 `/tmp/opencode/rex-integration/`. It runs `cat` in place of project workloads and
 closes only its own test sessions.

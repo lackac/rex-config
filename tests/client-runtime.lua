@@ -35,30 +35,9 @@ local ok, err = pcall(function()
     process.foreground and process.foreground.name == "zsh" and process.foreground.cwd == folder,
     "Rex login shell did not retain the project cwd"
   )
-  local opened, open_err = rex.invoke("project_open", { path = folder })
-  assert(opened, open_err)
-  assert(opened.session_id == id, "Opening an existing project duplicated its session")
-  print("Rex client: activated login shell, no tmux autostart, and existing-project reuse passed")
+  print("Rex client: activated login shell without tmux autostart")
 end)
 
--- Preserve every unrelated registry entry; remove only this test's own mapping.
-pcall(function()
-  local state = (os.getenv("XDG_STATE_HOME") or os.getenv("HOME") .. "/.local/state")
-    .. "/rex/projects.json"
-  local temporary = common
-    .exec({ "/usr/bin/mktemp", state .. "." .. common.timestamp .. ".XXXXXX" })
-    :gsub("\n$", "")
-  local text = common.read(state)
-  if text then
-    local entries = assert(rex.json.decode(text))
-    if entries[folder] == id then
-      entries[folder] = nil
-      common.write(temporary, assert(rex.json.encode(entries)))
-      assert(os.rename(temporary, state))
-    end
-  end
-  os.remove(temporary)
-end)
 local restored, restore_err = pcall(rex.client.queue, "session.select", { session_id = original })
 common.call("session.attach", { session_id = id })
 common.call("session.destroy", { session_id = id })

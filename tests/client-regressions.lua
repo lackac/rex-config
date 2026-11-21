@@ -6,8 +6,12 @@ local common = require("common")
 local client = assert(rex.args.client, "Pass client=APP_ID")
 local original = assert(rex.args.return_session, "Pass return_session=ID")
 local endpoint = common.call("server.status").listeners[1].endpoint
-local base = "/tmp/opencode/rex-integration/client-regressions"
-common.exec({ "/bin/mkdir", "-p", base .. "/origin", base .. "/target", base .. "/new-project" })
+local scratch = "/tmp/opencode/rex-integration"
+common.exec({ "/bin/mkdir", "-p", scratch })
+local base = common
+  .exec({ "/usr/bin/mktemp", "-d", scratch .. "/client-regressions." .. common.timestamp .. ".XXXXXX" })
+  :gsub("\n$", "")
+common.exec({ "/bin/mkdir", "-p", base .. "/origin", base .. "/target" })
 local made, failures = {}, {}
 local function check(name, fn)
   local ok, err = pcall(fn)
@@ -109,12 +113,6 @@ local ok, err = pcall(function()
     rex.client.queue("session.select", { session_id = target.session_id })
     selected(target)
   end)
-  check("project action switches the app", function()
-    reset()
-    local opened = assert(rex.json.decode(cli("do", "project_open", "path=" .. base .. "/target")))
-    assert(opened.session_id == target.session_id, "Existing test project was not reused")
-    selected(target)
-  end)
   check("both project picker keys bind the named action", function()
     local keymap = assert(rex.json.decode(cli("keymap", "--json")))
     local found = {}
@@ -125,14 +123,24 @@ local ok, err = pcall(function()
     end
     assert(found[";"] and found.k, "Missing a project picker binding")
   end)
-  check("new project creates two tabs and switches the app", function()
+  local project, project_id
+  local path = "path=" .. base .. "/target"
+  check("new project at a manual session's cwd creates two tabs and switches the app", function()
     reset()
-    local opened =
-      assert(rex.json.decode(cli("do", "project_open", "path=" .. base .. "/new-project")))
-    made[#made + 1] = opened.session_id
-    local project = view(opened)
+    local opened = assert(rex.json.decode(cli("do", "project_open", path)))
+    assert(opened.session_id ~= target.session_id, "Opening a project adopted the manual session")
+    project_id = opened.session_id
+    made[#made + 1] = project_id
+    project = view(opened)
     assert(#project.windows == 2, "New project must have OpenCode and Shell tabs")
     assert(project.windows[1].label == "OpenCode" and project.windows[2].label == "Shell")
+    selected(project, "OpenCode")
+  end)
+  check("reopening the managed project switches the app", function()
+    assert(project, "Managed project fixture is missing")
+    reset()
+    local opened = assert(rex.json.decode(cli("do", "project_open", path)))
+    assert(opened.session_id == project_id, "Existing test project was not reused")
     selected(project, "OpenCode")
   end)
   check("main selects the home-directory session", function()
@@ -221,6 +229,7 @@ for _, id in ipairs(made) do
   common.call("session.attach", { session_id = id })
   common.call("session.destroy", { session_id = id })
 end
+pcall(common.exec, { "/bin/rmdir", base .. "/origin", base .. "/target", base })
 assert(restored, restore_err)
 assert(ok, err)
 assert(#failures == 0, table.concat(failures, ", "))
