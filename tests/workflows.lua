@@ -56,11 +56,25 @@ rex = {
   end,
   json = {
     encode = function(data)
-      json[#json + 1] = data
-      return "json:" .. #json
+      local fields, copy = {}, {}
+      for path, id in pairs(data) do
+        fields[#fields + 1] = ("%q:%q"):format(path, id)
+        copy[path] = id
+      end
+      local text = "{" .. table.concat(fields, ",") .. "}"
+      json[text] = copy
+      return text
     end,
-    decode = function(data)
-      return json[tonumber(data:match("^json:(%d+)$"))]
+    decode = function(text)
+      local data = json[text]
+      if data == nil then
+        return nil, "rex.json.decode: text is not valid JSON"
+      end
+      local copy = {}
+      for path, id in pairs(data) do
+        copy[path] = id
+      end
+      return copy
     end,
   },
   layout = {
@@ -232,19 +246,53 @@ local state = state_home .. "/rex/projects.json"
 local memory = {
   [state] = rex.json.encode({
     ["/new/project"] = "session:stale",
-    ["/other/project"] = "session:full-b",
+    ['/other/project:"draft"\\'] = "session:full-b",
   }),
 }
-local real_rename = os.rename
+local real_open, real_rename, real_remove = io.open, os.rename, os.remove
+local open_failure, read_failure, closed
+io.open = function(path, mode)
+  if path ~= state then
+    return real_open(path, mode)
+  end
+  equal(mode, "rb")
+  if open_failure then
+    return nil, open_failure, 1
+  end
+  if not memory[path] then
+    return nil, "open " .. path .. ": no such file or directory", 1
+  end
+  return {
+    read = function(_, format)
+      equal(format, "*a")
+      if read_failure then
+        return nil, read_failure, 1
+      end
+      return memory[path]
+    end,
+    close = function()
+      closed = true
+      return true
+    end,
+  }
+end
+local writes, replacements = 0, 0
 os.rename = function(from, to)
-  memory[to] = memory[from]
+  equal(to, state)
+  assert(from:sub(1, #state + 1) == state .. ".")
+  memory[to] = assert(memory[from])
+  memory[from] = nil
+  replacements = replacements + 1
+  return true
+end
+os.remove = function(from)
+  assert(from:sub(1, #state + 1) == state .. ".")
   memory[from] = nil
   return true
 end
-common.read = function(path)
-  return memory[path]
-end
 common.write = function(path, value)
+  assert(path ~= state, "Registry writes must be atomic")
+  writes = writes + 1
   memory[path] = value
 end
 local creates = 0
@@ -288,14 +336,18 @@ equal(calls[calls_before + 3].args.session_id, opened.session_id)
 equal(calls[calls_before + 4].method, "session.focus_window")
 local saved = rex.json.decode(memory[state])
 equal(saved["/new/project"], "session:created")
-equal(saved["/other/project"], "session:full-b")
+equal(saved['/other/project:"draft"\\'], "session:full-b")
+equal(writes, 1)
+equal(replacements, 1)
 calls_before = #calls
 commands_before = #commands
 equal(projects.open({}, "/new/project").session_id, "session:created")
 equal(#calls, calls_before + 1)
-equal(#commands, commands_before + 3) -- Resolve the path, mkdir, mktemp. No naming.
+equal(#commands, commands_before + 1) -- Resolve the path only.
 equal(calls[#calls].method, "session.list")
 equal(creates, 1)
+equal(writes, 1)
+equal(replacements, 1)
 equal(queued[#queued].args.session_id, "session:created")
 local queued_before = #queued
 projects.open({ client_id = "client:cli" }, "/new/project")
@@ -393,6 +445,7 @@ rex.ui.pick = function(opts)
 end
 for _, result in ipairs({
   { ok = false, stdout = "One\nTwo\nThree\nFour\n", stderr = "Helper failed" },
+  { ok = false, stdout = "", stderr = "", timed_out = true },
   { ok = true, stdout = "One\nTwo\nThree\nFour" },
   { ok = true, stdout = "One\nTwo\nThree\n" },
   { ok = true, stdout = "One\nTwo\nThree\nFour\nFive\n" },
@@ -586,6 +639,7 @@ handlers[common.creator .. ".modes"] = function(args)
   return { screen = assert(screen[args.block_id]) }
 end
 handlers["session.focus_window"] = nil
+local link_writes = writes
 check_target(open_link("/links/alias", directory), "window:existing", "wrapped", false)
 screen.alternate = "alternate"
 check_target(open_link("/links/alias", directory), "window:existing", "alternate", false)
@@ -600,6 +654,7 @@ handlers["session.new_window"] = function(args)
   return { window_id = "window:new", block_ids = { "block:new" } }
 end
 check_target(open_link("/links/alias", directory), "window:new", "block:new", true)
+equal(writes, link_writes)
 equal(#queued, queued_before)
 
 sessions = {}
@@ -610,6 +665,132 @@ sessions = {}
 expected_root, expected_directory = "/", directory
 check_target(open_link("/", directory), "window:first", "block:first", true)
 equal(#queued, queued_before)
-os.rename = real_rename
+
+-- Neither a failed open nor a failed read may be treated as a missing file.
+local original_registry = memory[state]
+local original_writes, original_replacements = writes, replacements
+local function refuses_registry(pattern)
+  calls_before, commands_before = #calls, #commands
+  fails(function()
+    projects.open({}, "/fictional/project")
+  end, pattern)
+  equal(#calls, calls_before + 1) -- Only the session list.
+  equal(#commands, commands_before + 1) -- Only path resolution.
+  equal(writes, original_writes)
+  equal(replacements, original_replacements)
+end
+open_failure = "open " .. state .. ": permission denied"
+refuses_registry("permission denied")
+open_failure = "open " .. state .. ": not a directory"
+refuses_registry("not a directory")
+open_failure = nil
+read_failure = "read " .. state .. ": is a directory"
+closed = false
+refuses_registry("is a directory")
+equal(closed, true)
+read_failure = nil
+json["[]"] = {}
+json['{"/project":null}'] = {}
+json['{"/project":12}'] = { ["/project"] = 12 }
+json['{"/project":"not-a-session"}'] = { ["/project"] = "not-a-session" }
+json['{"/project":"session:first","/project":"session:last"}'] = { ["/project"] = "session:last" }
+for _, text in ipairs({
+  "{",
+  "",
+  "[]",
+  '{"/project":null}',
+  '{"/project":12}',
+  '{"/project":"not-a-session"}',
+  '{"/project":"session:first","/project":"session:last"}',
+}) do
+  memory[state] = text
+  refuses_registry(
+    (text == "{" or text == "") and "text is not valid JSON" or "Invalid Rex project registry"
+  )
+  equal(memory[state], text)
+end
+memory[state] = original_registry
+
+-- Check the second read too, and save new IDs before optional attach/focus.
+handlers["session.create"] = function()
+  read_failure = "read " .. state .. ": input/output error"
+  return { session_id = "session:fictional" }
+end
+fails(function()
+  projects.open({}, "/fictional/project")
+end, "input/output error")
+equal(writes, original_writes)
+equal(replacements, original_replacements)
+equal(memory[state], original_registry)
+read_failure = nil
+
+memory[state] = nil
+handlers["session.create"] = function()
+  return {
+    session_id = "session:fictional",
+    initial_windows = { { window_id = "window:fictional" } },
+  }
+end
+handlers["session.attach"] = function()
+  equal(rex.json.decode(memory[state])["/fictional/project"], "session:fictional")
+  return nil, "attach timed out"
+end
+fails(function()
+  projects.open({}, "/fictional/project")
+end, "attach timed out")
+equal(replacements, original_replacements + 1)
+sessions = { { session_id = "session:fictional", label = "project" } }
+equal(projects.open({}, "/fictional/project").session_id, "session:fictional")
+equal(writes, original_writes + 1)
+
+-- Rex's limit is 128 code points, not 128 bytes. The picker retains its
+-- original titles; only session creation bounds the label.
+local long_name = ("a🪐"):rep(45) .. ("é"):rep(40)
+local parent = ("界"):rep(25)
+local label
+handlers["session.create"] = function(args)
+  label = args.label
+  return {
+    session_id = "session:label",
+    initial_windows = { { window_id = "window:label" } },
+  }
+end
+handlers["session.attach"] = function()
+  return {}
+end
+handlers["session.focus_window"] = handlers["session.attach"]
+sessions = {}
+naming = nil
+projects.open({}, "/one/" .. long_name)
+equal(label, ("a🪐"):rep(45) .. ("é"):rep(38))
+long_name = ("é🪐"):rep(70)
+sessions[1] = { session_id = "session:occupied", label = ("é🪐"):rep(64) }
+naming = { ok = true, stdout = long_name .. "\n" }
+projects.open({}, "/two/" .. parent .. "/project")
+equal(label, ("é🪐"):rep(50) .. "é — " .. ("界"):rep(24))
+sessions[2] = { session_id = "session:occupied-again", label = label }
+projects.open({}, "/three/" .. parent .. "/project")
+equal(label, ("é🪐"):rep(49) .. " — " .. ("界"):rep(24) .. " #2")
+
+-- Preserve the whole path suffix at the limit, and pick another label if
+-- that exact suffix is already taken.
+sessions = { { session_id = "session:occupied", label = "project" } }
+local full_path = "/" .. ("界"):rep(109) .. "/project"
+naming = { ok = true, stdout = "project\n" }
+projects.open({}, full_path)
+equal(label, "project — " .. full_path)
+sessions[2] = { session_id = "session:occupied-again", label = label }
+projects.open({}, full_path)
+equal(label, "project — " .. ("界"):rep(24))
+
+zoxide = { ok = true, stdout = "/four/project\n" }
+naming = { ok = true, stdout = long_name .. "\n" }
+rex.ui.pick = function(opts)
+  equal(opts.items[3].title, long_name)
+  return nil, "cancelled"
+end
+equal(pick_project({}), nil)
+
+io.open, os.rename, os.remove = real_open, real_rename, real_remove
 os.getenv = real_getenv
 print("Workflow tests passed")

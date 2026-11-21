@@ -2,19 +2,37 @@ local common = require("common")
 local M = {}
 local opening = {}
 local picker_limit = 2000
+local label_limit = 128
+local utf8_start = "[^\128-\191]"
 
 local function state_path()
   return (os.getenv("XDG_STATE_HOME") or assert(os.getenv("HOME")) .. "/.local/state")
     .. "/rex/projects.json"
 end
 
-local function registry()
-  local text = common.read(state_path())
+local invalid_registry = "Invalid Rex project registry"
+local function registry(target)
+  local text = common.read(target or state_path())
   if not text then
     return {}
   end
   local data, err = rex.json.decode(text)
-  assert(type(data) == "table", err or "Invalid Rex project registry")
+  assert(type(data) == "table" and text:match("^%s*{"), err or invalid_registry)
+  -- Rex's decoder drops null fields and collapses duplicate keys. Count the
+  -- fields outside strings so neither case can be silently rewritten.
+  local structure = text:gsub("\\.", ""):gsub('"[^"]*"', "")
+  local _, fields = structure:gsub(":", "")
+  for path, id in pairs(data) do
+    assert(
+      type(path) == "string"
+        and path:sub(1, 1) == "/"
+        and type(id) == "string"
+        and id:match("^session:[%w-]+$"),
+      invalid_registry
+    )
+    fields = fields - 1
+  end
+  assert(fields == 0, invalid_registry)
   return data
 end
 
@@ -24,11 +42,17 @@ local function remember(path, id)
   local temporary = common
     .exec({ "/usr/bin/mktemp", target .. "." .. common.timestamp .. ".XXXXXX" })
     :gsub("\n$", "")
-  -- No yielding subprocess between reading the registry and replacing it.
-  local data = registry()
-  data[path] = id
-  common.write(temporary, assert(rex.json.encode(data)))
-  assert(os.rename(temporary, target))
+  local ok, err = pcall(function()
+    -- Re-read after yielding subprocesses so other projects' writes survive.
+    local data = registry(target)
+    data[path] = id
+    common.write(temporary, assert(rex.json.encode(data)))
+    assert(os.rename(temporary, target))
+  end)
+  if not ok then
+    os.remove(temporary)
+    error(err, 0)
+  end
 end
 
 local function names(paths, home)
@@ -62,6 +86,44 @@ local function names(paths, home)
   end
   -- A partial reply cannot safely be matched to directories.
   return #labels == #paths and labels or defaults
+end
+
+local function label_prefix(text, limit)
+  -- Rex counts code points, not bytes; stop before a whole UTF-8 character.
+  for start in text:gmatch("()" .. utf8_start) do
+    if limit == 0 then
+      return text:sub(1, start - 1)
+    end
+    limit = limit - 1
+  end
+  return text
+end
+
+local function session_label(name, path, sessions)
+  local used = {}
+  for _, session in ipairs(sessions) do
+    if session.label then
+      used[session.label] = true
+    end
+  end
+  local label = label_prefix(name, label_limit)
+  if not used[label] then
+    return label
+  end
+  local full = name .. " — " .. path
+  if not used[full] and label_prefix(full, label_limit) == full then
+    return full
+  end
+  local parent = path:match("/([^/]+)/[^/]+$") or "/"
+  local suffix = " — " .. label_prefix(parent, 24)
+  local n = 1
+  repeat
+    local tail = suffix .. (n == 1 and "" or " #" .. n)
+    local _, length = tail:gsub(utf8_start, "")
+    label = label_prefix(name, label_limit - length) .. tail
+    n = n + 1
+  until not used[label]
+  return label
 end
 
 -- Durable path -> full session ID survives renames and changing terminal cwds.
@@ -162,13 +224,7 @@ function M.open(ctx, path, directory)
     if not id then
       local home = assert(os.getenv("HOME"))
       local shell_only = not directory and path == common.canonical(home)
-      local name = names({ path }, shell_only and path or home)[1]
-      for _, session in ipairs(sessions) do
-        if session.label == name then
-          name = name .. " — " .. path
-          break
-        end
-      end
+      local name = session_label(names({ path }, shell_only and path or home)[1], path, sessions)
       local shell = { window_label = "Shell", layout = common.layout(path) }
       local windows = { shell }
       if not shell_only then
@@ -178,7 +234,8 @@ function M.open(ctx, path, directory)
         }
       end
       local created = common.call("session.create", { label = name, initial_windows = windows })
-      id = created.session_id
+      id = assert(created.session_id)
+      remember(path, id)
       if directory then
         window = created.initial_windows[1]
       else
@@ -189,7 +246,6 @@ function M.open(ctx, path, directory)
         )
       end
     end
-    remember(path, id)
     if not directory then
       return { session_id = id, path = path }
     end

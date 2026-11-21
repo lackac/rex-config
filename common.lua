@@ -144,12 +144,18 @@ function M.layout(cwd, command, keep)
 end
 
 function M.read(path)
-  local file = io.open(path, "rb")
+  local file, err, code = io.open(path, "rb")
   if not file then
-    return nil
+    -- Rex preview.22 returns 1 for every I/O error, with the Go PathError text.
+    if code == 2 or (code == 1 and err == "open " .. path .. ": no such file or directory") then
+      return nil
+    end
+    error(err or ("Could not open " .. path))
   end
-  local data = file:read("*a")
-  file:close()
+  local data, read_error = file:read("*a")
+  local closed, close_error = file:close()
+  assert(data, read_error or ("Could not read " .. path))
+  assert(closed, close_error or ("Could not close " .. path))
   return data
 end
 
