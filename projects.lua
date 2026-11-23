@@ -138,14 +138,11 @@ local function live_id(id, sessions)
 end
 
 local function opencode_layout(directory)
-  local zsh = common.tool("zsh")
   return common.layout(directory, {
-    zsh,
-    "-lic",
-    'if command -v "$1" >/dev/null 2>&1; then "$1" exec "$PWD" "$2" -lic opencode; else opencode; fi; exec "$2" -il',
-    "rex-opencode",
-    common.tool("direnv"),
-    zsh,
+    common.tool("env"),
+    "START_OPENCODE=1",
+    common.tool("zsh"),
+    "-il",
   })
 end
 

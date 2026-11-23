@@ -315,8 +315,7 @@ handlers["session.create"] = function(args)
   equal(#args.initial_windows, 2)
   equal(args.initial_windows[1].layout.block.options.cwd, "/new/project")
   local command = args.initial_windows[1].layout.block.options.command
-  equal(command[1], "/tools/zsh")
-  assert(command[3]:find('exec "%$2" %-il'))
+  equal(table.concat(command, " "), "/tools/env START_OPENCODE=1 /tools/zsh -il")
   sessions[#sessions + 1] = { session_id = "session:created", label = args.label }
   return {
     session_id = "session:created",
@@ -566,9 +565,7 @@ local function check_launch(tab, cwd)
   equal(options.cwd, cwd)
   equal(options.login, false)
   equal(options.shell, "none")
-  equal(options.command[1], "/tools/zsh")
-  equal(options.command[5], "/tools/direnv")
-  equal(#options.command, 6)
+  equal(table.concat(options.command, " "), "/tools/env START_OPENCODE=1 /tools/zsh -il")
   assert(not table.concat(options.command, "\n"):find("ses_aB12", 1, true))
 end
 calls_before = #calls

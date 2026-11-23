@@ -41,9 +41,11 @@ list. Choose a session by name to switch to it, or choose a directory to open
 a managed project. **Cmd+Shift+K** opens Rex's native session picker instead.
 
 A managed project starts with **OpenCode** and **Shell** tabs. The OpenCode
-tab needs `opencode` on the login shell's `PATH`. It uses `direnv` if available
-and returns to a shell when OpenCode exits. The config records the session ID for
-the directory's canonical path in
+tab sets `START_OPENCODE=1` for an interactive Zsh. The `nix-config`
+OpenCode module uses that flag to start `opencode` after `direnv` loads the
+project environment. Press Ctrl+Z to return to the prompt and `fg` to resume.
+Without the managed Zsh hook, run `opencode` at the prompt. The config records
+the session ID for the directory's canonical path in
 `${XDG_STATE_HOME:-$HOME/.local/state}/rex/projects.json`. Opening that
 directory again reuses the saved session while it's live, even if you rename
 it or change directories in its panes. Sessions you create through Rex's
