@@ -78,8 +78,8 @@ Rex actions; others run workflows defined here. This guide uses *tab* and
 | --- | --- | --- |
 | Cmd+K | `;` or `k` | Open the configured project picker |
 | Cmd+Shift+K | — | Open Rex's native session picker |
-| Cmd+E | Ctrl+E | Toggle recent session; Rex chooses the destination tab |
-| — | Ctrl+S | Toggle recent tab within the session |
+| Cmd+E | Ctrl+E | Toggle between recent sessions on the current Rex server |
+| — | Ctrl+S | Toggle between the two most recently focused tabs in this session |
 | — | `1`–`9` | Select a tab by number |
 | — | `n` / `p` | Next / previous tab |
 | — | Ctrl+Option+L / Ctrl+Option+H, or Ctrl+Option+Right / Ctrl+Option+Left | Next / previous tab |

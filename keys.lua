@@ -1,6 +1,17 @@
 local common = require("common")
 local M = {}
 
+local function select_recent(filters)
+  -- A fresh lookup starts from current focus, so the next press can return here.
+  local target = common.call("focus_history.reverse", filters)
+  if target.reversed then
+    rex.client.queue("session.select", {
+      session_id = target.session_id,
+      window_id = target.window_id,
+    })
+  end
+end
+
 local function command_split(origin, argv, side, ratio)
   return common.call("session.new_split", {
     session_id = origin.session_id,
@@ -39,13 +50,38 @@ function M.setup()
       }, "after", 0.5)
     end,
   })
+  rex.action({
+    name = "recent_session",
+    title = "Toggle Recent Session",
+    run = function(ctx)
+      if ctx.session_id then
+        select_recent({ not_session_id = ctx.session_id })
+      end
+    end,
+  })
+  rex.action({
+    name = "recent_tab",
+    title = "Toggle Recent Tab in Session",
+    run = function(ctx)
+      if not ctx.session_id then
+        return
+      end
+      local view = common.call("session.view", { session_id = ctx.session_id })
+      if view.active_window_id then
+        select_recent({
+          session_id = ctx.session_id,
+          not_window_id = view.active_window_id,
+        })
+      end
+    end,
+  })
 
   local bindings = {
     ["ctrl+a"] = { "pane.send_key", { key = "ctrl+a" } },
     [";"] = { "project_picker" },
     k = { "project_picker", cmd = "k" },
-    ["ctrl+e"] = { "session.recent", cmd = "e" },
-    ["ctrl+s"] = { "client.tab.recent.in_session" },
+    ["ctrl+e"] = { "recent_session", cmd = "e" },
+    ["ctrl+s"] = { "recent_tab" },
     c = { "client.tab.new" },
     [","] = { "client.tab.rename" },
     ["'"] = { "pane.go_to" },

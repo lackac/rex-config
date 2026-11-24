@@ -27,6 +27,7 @@ local function create(name)
     initial_windows = {
       { window_label = "One", layout = common.layout(base .. "/" .. name, { "/bin/cat" }) },
       { window_label = "Two", layout = common.layout(base .. "/" .. name, { "/bin/cat" }) },
+      { window_label = "Three", layout = common.layout(base .. "/" .. name, { "/bin/cat" }) },
     },
   })
   made[#made + 1] = session.session_id
@@ -46,7 +47,7 @@ end
 local function selected(session, index)
   -- Rex has no selected-session query. Read titles through Hammerspoon without
   -- performing navigation or typing into a terminal to observe the app's view.
-  local tab = type(index) == "string" and index or (index == 2 and "Two" or "One")
+  local tab = type(index) == "string" and index or ({ "One", "Two", "Three" })[index or 1]
   local expected = tab .. " - " .. session.label
   for _ = 1, 30 do
     local titles = assert(rex.json.decode(common.exec({
@@ -55,13 +56,7 @@ local function selected(session, index)
       'return hs.json.encode(hs.fnutils.imap(hs.application.find("Rex"):allWindows(), function(w) return w:title() end))',
     })))
     for _, title in ipairs(titles) do
-      if
-        title == expected
-        or (
-          index == false
-          and (title == session.label or title:sub(-#session.label - 3) == " - " .. session.label)
-        )
-      then
+      if title == expected then
         return
       end
     end
@@ -144,42 +139,27 @@ local ok, err = pcall(function()
     selected(project, "OpenCode")
   end)
   if rex.args.history == false then
-    print("SKIP native recent tab/session toggles (history=false)")
+    print("SKIP recent tab/session toggles (history=false)")
   else
     check("recent tab toggles within a session", function()
       reset()
+      rex.client.queue("client.tab.goto", { index = 3 })
+      selected(origin, 3)
       rex.client.queue("client.tab.goto", { index = 2 })
       selected(origin, 2)
-      common.call("client.perform", {
-        client_id = client,
-        session_id = id,
-        action = "client.tab.recent.in_session",
-      })
-      selected(origin)
-      common.call("client.perform", {
-        client_id = client,
-        session_id = id,
-        action = "client.tab.recent.in_session",
-      })
+      cli("do", "-s", id, "recent_tab")
+      selected(origin, 3)
+      cli("do", "-s", id, "recent_tab")
       selected(origin, 2)
     end)
     check("recent session toggles", function()
       reset()
       rex.client.queue("session.select", { session_id = target.session_id })
       selected(target)
-      common.call("client.perform", {
-        client_id = client,
-        session_id = target.session_id,
-        action = "session.recent",
-      })
-      -- Session history chooses the restored tab; tab toggling is checked above.
-      selected(origin, false)
-      common.call("client.perform", {
-        client_id = client,
-        session_id = id,
-        action = "session.recent",
-      })
-      selected(target, false)
+      cli("do", "-s", target.session_id, "recent_session")
+      selected(origin)
+      cli("do", "-s", id, "recent_session")
+      selected(target)
     end)
   end
 end)
