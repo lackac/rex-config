@@ -226,6 +226,17 @@ local reuse = actions.transcript_editor.run(origin, target)
 equal(reuse.pane, editor.block_id)
 equal(reuse.socket, "/cache/fictional/rex-editor/42.sock")
 
+-- A Markdown document uses Leaf even when an editor is in the same tab.
+handlers["session.new_layer"] = function(args)
+  equal(args.window_id, origin.window_id)
+  equal(args.layout.block.label, "Leaf")
+  equal(args.layout.block.options.command[3], 'exec leaf open "$1"')
+  equal(args.layout.block.options.command[5], target.file)
+  return layer
+end
+local markdown = { directory = target.directory, file = target.file, markdown = true }
+equal(actions.transcript_editor.run(origin, markdown).floating, true)
+
 -- A side editor in another tab doesn't stop a popup in the origin tab.
 handlers["session.new_layer"] = function(args)
   equal(args.window_id, explicit.window_id)

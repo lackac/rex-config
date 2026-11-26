@@ -73,22 +73,28 @@ end
 
 local function transcript_editor(origin, window, args)
   local file, cwd = path(args.file), path(args.directory)
-  local found = find_editor(origin, window)
-  if found then
-    return found
+  local layout
+  if args.markdown then
+    layout = editor_layout(cwd, 'exec leaf open "$1"', { file }, "Leaf")
+  else
+    local found = find_editor(origin, window)
+    if found then
+      return found
+    end
+    local argv = {}
+    if args.line then
+      argv[1] = ("+call cursor(%d,%d)"):format(args.line, args.column or 1)
+    end
+    argv[#argv + 1] = "--"
+    argv[#argv + 1] = file
+    layout = editor_layout(cwd, 'exec nvim "$@"', argv, "Neovim")
   end
-  local argv = {}
-  if args.line then
-    argv[1] = ("+call cursor(%d,%d)"):format(args.line, args.column or 1)
-  end
-  argv[#argv + 1] = "--"
-  argv[#argv + 1] = file
   common.call("session.new_layer", {
     session_id = origin.session_id,
     window_id = origin.window_id,
     bounds = { 0.1, 0.1, 0.8, 0.8 },
     focus = true,
-    layout = editor_layout(cwd, 'exec nvim "$@"', argv, "Neovim"),
+    layout = layout,
   })
   return { floating = true }
 end
@@ -103,8 +109,14 @@ function M.setup()
   })
   rex.action({
     name = "transcript_editor",
-    title = "Open transcript file in Neovim",
-    args = { directory = "string", file = "string", line = "integer?", column = "integer?" },
+    title = "Open transcript file",
+    args = {
+      directory = "string",
+      file = "string",
+      line = "integer?",
+      column = "integer?",
+      markdown = "boolean?",
+    },
     run = function(ctx, args)
       local origin, window = common.origin(ctx)
       return transcript_editor(origin, window, args)

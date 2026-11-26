@@ -142,10 +142,11 @@ prefer tmux when nested:
 | Ctrl+X | Focus the pane and forward OpenCode's native leader key |
 | `<leader>aK` | Close the OpenCode pane only if this Neovim instance started it |
 
-With the OpenCode transcript-links plugin, a file link opens in the Neovim
-split you started with Prefix `v` in the same Rex tab. If the plugin can't
-identify exactly one such split, it opens a floating Neovim pane instead.
-The Neovim workflows need `nvim` on the login shell's `PATH`.
+With the OpenCode transcript-links plugin, Markdown links open in a floating
+Leaf pane. Other file links open in the Neovim split you started with Prefix
+`v` in the same Rex tab, or in a floating Neovim pane if the plugin can't
+identify exactly one such split. Both tools need to be on the login shell's
+`PATH`.
 
 This setup's Hammerspoon config prefers Rex for terminal cycling and layouts,
 and recognizes Rex window titles when choosing a browser profile. Its
